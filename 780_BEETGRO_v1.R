@@ -31,6 +31,7 @@
   Rpackages_version = c(
     "ggplot2_3.3.5",
     "dplyr_1.0.7",
+    "readxl_1.3.1",
     "writexl_1.4.0"
   )
   
@@ -57,4 +58,19 @@
 ############################################
 # READ IN DATA
 
-param <- 
+param <- read_xlsx("parameters.xlsx", sheet = "parameters")
+TrialData <- read_xlsx("parameters.xlsx", sheet = "TrialData")
+Site <- read_xlsx("parameters.xlsx", sheet = "Site1")
+
+############################################
+# INITIAL A single site 
+i=1L
+
+TrialData_i <- TrialData[i,]
+
+latitude <- TrialData_i$Latitude*2*pi/360
+b <- ifelse(TrialData_i$SoilB < 1, 2.1, TrialData_i$SoilB)
+pop1 <- ifelse(TrialData_i$POP1 < 90000, -0.0003*(TrialData_i$POP1/1000)^2+0.0456*(TrialData_i$POP1/1000)-1.0246, 1)
+pop2 <- ifelse(TrialData_i$POP2 < 90000, -0.0003*(TrialData_i$POP2/1000)^2+0.0456*(TrialData_i$POP2/1000)-1.0246, 1)
+pop3 <- ifelse(TrialData_i$POP3 < 90000, -0.0003*(TrialData_i$POP3/1000)^2+0.0456*(TrialData_i$POP3/1000)-1.0246, 1)
+poploss <- ifelse(TrialData_i$PlantPop == 0, 1, mean(pop1, pop2, pop3))
