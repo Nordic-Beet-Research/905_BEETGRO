@@ -80,7 +80,7 @@ dbDisconnect(con)
 # TAKE DATA FROM JUST THE ONE YEAR
 
 dat <- weather_dat %>%
-  filter(year %in% c(2018, 2019, 2020, 2021, 2022))
+  filter(year %in% c(2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022))
 
 ############################################
 # SOME EXTRA STATION DATA
