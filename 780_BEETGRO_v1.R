@@ -19,6 +19,8 @@
 ## - makes the results viewable via one or two dashboards
 ##
 ## Current status:
+## - Ready to add in the soil moisture deficit (SMD) and canopy cover models.
+## - DON'T FORGET TO UPDATE THE README AS YOU GO!
 ## 
 ############################################
 ############################################
@@ -106,12 +108,14 @@ if(length(missing_files) == 0){
 }
 
 ############################################
-# INITIAL A SINGLE SITE "i"
+# INITIAL A SINGLE TRIAL "i"
 i=1L
+
+## START LOOP HERE!
 
 TrialData_i <- TrialData[i,]
 
-latitude <- TrialData_i$Latitude*2*pi/360
+latitude <- TrialData_i$Latitude*2*pi/360   # Converts latitude from degrees-decimal to radians
 b <- ifelse(TrialData_i$SoilB < 1, 2.1, TrialData_i$SoilB)
 pop1 <- ifelse(TrialData_i$POP1 < 90000, -0.0003*(TrialData_i$POP1/1000)^2+0.0456*(TrialData_i$POP1/1000)-1.0246, 1)
 pop2 <- ifelse(TrialData_i$POP2 < 90000, -0.0003*(TrialData_i$POP2/1000)^2+0.0456*(TrialData_i$POP2/1000)-1.0246, 1)
@@ -151,14 +155,13 @@ if(b > 20){
 }
 
 ############################################
-# TABLE OF EACH PARAMETER FOR EACH DAY OF YEAR FOR SITE "i".
+# TABLE OF EACH PARAMETER FOR EACH DAY OF YEAR FOR TRIAL "i".
 
-Site_i <- read_xlsx("parameters.xlsx", sheet = paste0("Site", TrialData_i$SiteID))
-Site_i <- Site_i %>%
+Trial_i <- Sites %>%
   filter(year == TrialData_i$Year)
 
 # Crop status
-Site_i <- Site_i %>%
+Trial_i <- Trial_i %>%
   mutate(
     Sown = 0,
     Sown = replace(Sown, doy >= TrialData_i$SowDOY, 1),
@@ -169,7 +172,7 @@ Site_i <- Site_i %>%
   )
 
 # Temperature
-Site_i <- Site_i %>%
+Trial_i <- Trial_i %>%
   mutate(
     dT = (Tmax + Tmin)/2 - param$Tbase,
     dT = replace(dT, dT < 0, 0)
@@ -188,13 +191,18 @@ Site_i <- Site_i %>%
   ungroup
 
 # Soil
-Site_i <- Site_i %>%
+Trial_i <- Trial_i %>%
   mutate(
     SMD = 0)
   
 # Canopy
-Site_i <- Site_i %>%
+Trial_i <- Trial_i %>%
   mutate(
     f = 0)
 
+
+
+
+
+## END LOOP HERE
 
