@@ -8,6 +8,18 @@
 ## This project uses R 4.1.2 
 ## with snapshot date 2021-11-01
 ##
+## 
+## Aim is to build a system that: 
+## - reads in all the trial data from a single spreadsheet. Each TrialID is a unique trial site x year combination.
+## - reads in all the site weather data from site specific spreadsheets. Multiple years are currently housed in single site files. 
+## -- This set-up suits most weather data systems, thus lends itself to automation. 
+## -- It also means that with careful management of weather data files, .csv files for each site can be saved locally.
+## - fills in any blanks in the data where possible.
+## - runs through the analysis for each TrialID and stores the results as appropriate.
+## - makes the results viewable via one or two dashboards
+##
+## Current status:
+## 
 ############################################
 ############################################
 
@@ -59,13 +71,43 @@
 ############################################
 # READ IN DATA
 
+# read in model parameters
 param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"),names_from = parameter)
-TrialData <- read_xlsx("parameters.xlsx", sheet = "TrialData")
-#Site <- read_xlsx("parameters.xlsx", sheet = "Site1")
+# read in trial data
+TrialData <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
+# read which sites are in trail data, and read in appropriate weather data
+SiteIDs <- unique(TrialData$SiteID)
+Sites <- data.frame("year" = numeric(),
+                    "doy" = numeric(),
+                    "Tmax" = numeric(),
+                    "Tmin" = numeric(),
+                    "Rain" = numeric(),
+                    "Solar" = numeric(),
+                    "Epenman" = numeric(),
+                    "Windspeed" = numeric())
+file_names <- list.files()
+missing_files <- character()
+for(i in length(SiteIDs)){
+  SiteID_i <- paste0("Site",sprintf("%03d",SiteIDs[i]),".xlsx")
+  if(!(SiteID_i %in% file_names)) missing_files <- c(missing_files, SiteID_i)
+}
+if(length(missing_files) == 0){
+  for(i in length(SiteIDs)){
+    SiteID_i <- paste0("Site",sprintf("%03d",SiteIDs[i]))
+    Site_i <- read_xlsx(paste0(SiteID_i,".xlsx"))
+    Sites <- Sites %>%
+      add_row(Site_i)
+    rm(Site_i)
+  }
+} else {
+  stop(paste0("Missing weather data files: ", missing_files, 
+              "\n", "Maybe it/ they just need to be renamed?",
+              "\n", "The name should be in the format Site###.xlsx"))
+}
 
 ############################################
 # INITIAL A SINGLE SITE "i"
-iv=1L
+i=1L
 
 TrialData_i <- TrialData[i,]
 
