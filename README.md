@@ -50,6 +50,7 @@ ISSUES
 The following issues were noted during the translation of the model.
 
 - Given q = qfc, qrel always = 1.
+- Why does T_Stress (DailyTemp in OpenModel) not apply if temp >= 25?
 
 ########################################################
 ASSUMPTIONS IN THE MODEL
