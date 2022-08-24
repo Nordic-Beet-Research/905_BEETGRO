@@ -108,7 +108,7 @@ if(length(missing_files) == 0){
 }
 
 ############################################
-# INITIAL A SINGLE TRIAL "i"
+# INITIATE A SINGLE TRIAL "i"
 i=1L
 
 ## START LOOP HERE!
@@ -174,14 +174,15 @@ Trial_i <- Trial_i %>%
 # Temperature
 Trial_i <- Trial_i %>%
   mutate(
-    dT = (Tmax + Tmin)/2 - param$Tbase,
+    Tave = (Tmax + Tmin)/2, # Called Temp in OpenModel
+    dT = Tave - param$Tbase,
     dT = replace(dT, dT < 0, 0)
     ) %>%
   group_by(Sown) %>%
   mutate(
     Cd_sow = cumsum(dT),
     Cd_sow = replace(Cd_sow, Sown == 0, 0),
-    Emerged = replace(Emerged, TrialData_i$EmDOY <= TrialData_i$SowDOY & Cd_sow >= 90, 1)
+    Emerged = replace(Emerged, TrialData_i$EmDOY <= TrialData_i$SowDOY & Cd_sow >= param$Tzero, 1)
   ) %>%
   group_by(Emerged) %>%
   mutate(
@@ -198,10 +199,12 @@ Trial_i <- Trial_i %>%
 # Canopy
 Trial_i <- Trial_i %>%
   mutate(
-    f = 0)
-
-
-
+    f = param$fZero,
+    WStress = 1,
+    WStress = replace(WStress, TrialData_i$qrel < TrialData_i$WstressB & Tave > TrialData_i$WstressC , 1),
+    T_Stress = (Tave-3) * WStress, # Called DailyTemp in OpenModel
+    T_Stress = replace(T_Stress, Tave < 3 | Tave > 25 | Emerged == 1, 0)
+    )
 
 
 ## END LOOP HERE
