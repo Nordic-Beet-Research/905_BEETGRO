@@ -51,6 +51,8 @@ The following issues were noted during the translation of the model.
 
 - Given q = qfc, qrel always = 1.
 - Why does T_Stress (DailyTemp in OpenModel) not apply if temp >= 25?
+- in Beet::Main::row 88, it is not possible to solve this when TotalTemp is no set to the limit of 950 (or 990, as taken in the translaton. rows 82-84) before fTemp is defined (row 76). Otherwise, the Ln of a negative is asked for...
+- The User Observed canopy updates do not seem to be active. In Beet::Main::row_93, Trials.Can1aTemp is required, but it is not defined well after row 93 (row 376).
 
 ########################################################
 ASSUMPTIONS IN THE MODEL

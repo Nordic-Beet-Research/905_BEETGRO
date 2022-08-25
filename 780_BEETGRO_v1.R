@@ -203,9 +203,26 @@ Trial_i <- Trial_i %>%
     WStress = 1,
     WStress = replace(WStress, TrialData_i$qrel < TrialData_i$WstressB & Tave > TrialData_i$WstressC , 1),
     T_Stress = (Tave-3) * WStress, # Called DailyTemp in OpenModel
-    T_Stress = replace(T_Stress, Tave < 3 | Tave > 25 | Emerged == 1, 0)
+    T_Stress = replace(T_Stress, Tave < 3 | Tave > 25 | Emerged == 0, 0),
+    TotalTemp = cumsum(T_Stress),
+    TotalTemp = replace(TotalTemp, TotalTemp > 990, 990),
+    fTemp = TotalTemp * 0.001,
+    fTemp = replace(fTemp, fTemp < 0.00001, 0.00001),
+    f = 0.0015 + (0.99-0.0015)/(1+exp(-4*log((fTemp/(1-fTemp)))))
     )
 
+# Canopy, with adjustments from user input (Pretty sure this isn't working properly in OpenModel)
+if(TrialData_i$Canopy1 == 1 | TrialData_i$Can1aCOV > 0){
+  Trial_i <- Trial_i %>%
+    mutate(
+      f1 = param$fZero,
+      TotalTemp = cumsum(T_Stress),
+      TotalTemp = replace(TotalTemp, TotalTemp > 990, 990),
+      fTemp = TotalTemp * 0.001,
+      fTemp = replace(fTemp, fTemp < 0.00001, 0.00001),
+      f = 0.0015 + (0.99-0.0015)/(1+exp(-4*log((fTemp/(1-fTemp)))))
+    )
+}
 
 ## END LOOP HERE
 
