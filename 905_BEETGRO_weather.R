@@ -54,6 +54,8 @@
   
   # load packages
   for(i in Rpack) eval(parse(text = paste0("library(", i, ", lib.loc = '", path_Rpackages, "')")))
+  
+  rm(list = ls())
 }
 
 ############################################
@@ -80,7 +82,7 @@ dbDisconnect(con)
 # TAKE DATA FROM JUST THE ONE YEAR
 
 dat <- weather_dat %>%
-  filter(year %in% c(2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022))
+  filter(year %in% c(2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021))
 
 ############################################
 # SOME EXTRA STATION DATA
@@ -91,12 +93,18 @@ dat_stations <- data.frame("nr" = c(40141, 40142, 40143, 40144, 40145),
                            "mamsl" = c(10, 10, 10, 10, 10),
                            "wind_height" = c(2 ,2 ,2 ,2, 2))
 
-dat <- left_join(dat, dat_stations, by = "nr")
+dat <- left_join(dat, dat_stations, by = "nr") %>% 
+  rename(doy = dagnr)
 
 ############################################
 # CALCULATE ET, AND THE STEPS ALONG THE WAY
 
-dat <- dat %>% 
+filt_year <- 2021
+filt_nr <- 40141
+
+dat_weather <- dat %>% 
+  filter(year == filt_year,
+         nr == filt_nr) %>% 
   mutate(
     # WIND SPEED AT GROUND LEVEL
     wind_ground = xvh * 4.87/log(67.8*wind_height-5.42),
@@ -129,10 +137,10 @@ dat <- dat %>%
     vapourPress = (satPress_max*hhum/100 + satPress_min*lhum/100)/2,
     
     # INVERTED SUN DISTANCE
-    invSun = 1 + 0.033*cos(2*pi/365*dagnr),
+    invSun = 1 + 0.033*cos(2*pi/365*doy),
     
     # SUN DECLINATION
-    sunDecl = 0.409*sin(2*pi/365*dagnr - 1.39),
+    sunDecl = 0.409*sin(2*pi/365*doy - 1.39),
     
     # SUN ANGLE
     sunAngle = acos(-tan(lat*pi/180)*tan(sunDecl)),
@@ -157,14 +165,14 @@ dat <- dat %>%
   )
 
 ############################################
-# WRITE EXCEL
+# WRITE EXCEL FOR CONNECTION TO THE NEXT STAGE: EXAMPLE DATA ONLY!!
 
-write_xlsx(dat, "dat.xlsx")
+write_xlsx(dat_weather, paste0("dat_weather_",filt_year,"_",filt_nr,".xlsx"))
 
 ############################################
 # # VISUALISATIONS
 # 
-# ggplot(data = dat[which(dat$nr == 40145),], aes(x=dagnr, y=et)) +
+# ggplot(data = dat[which(dat$nr == 40145),], aes(x=doy, y=et)) +
 #   geom_line()
 # 
 # ggplot(data = dat, aes(x=et)) +
