@@ -224,3 +224,4 @@ if(dat_in_trial_i$Canopy1 == 1 | dat_in_trial_i$Can1aCOV > 0){
 
 ## END LOOP HERE
 
+write_xlsx(can_i, paste0("dat_canopy_2021.xlsx"))

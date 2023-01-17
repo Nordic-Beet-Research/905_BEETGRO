@@ -72,43 +72,48 @@ dat_in_param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"),n
 dat_in_trial <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
 # read in weather data
 dat_in_weath <- read_xlsx("dat_weather_2021_40141.xlsx", sheet = "Sheet1")
+# read in weather data
+dat_in_canopy <- read_xlsx("dat_canopy_2021.xlsx", sheet = "Sheet1")
 
 ############################################
 # CREATE FOUNDATION DATAFRAME
 
 ## Create base data frame for each day of the year
 smd_df <- data.frame(doy = seq(1:365),
-                     smd = 0,
-                     bbch = 00) # browseURL("https://en.wikipedia.org/wiki/BBCH-scale_(beet)")
+                     smd = 0) %>%  # browseURL("https://en.wikipedia.org/wiki/BBCH-scale_(beet)")
 
 
 ## Join the weather data (NEED TO ADD IN )
-smd_df <- smd_df %>% 
   left_join(
     select(dat_in_weath, c(doy, et)), 
-    by = "doy")
+    by = "doy") %>% 
+  left_join(dat_in_canopy, by = "doy")
 
 i=7L
 
-sow_date <- date(as.POSIXct(unlist(dat_in_trial[i,"SowDate"]), origin = '1970-01-01'))
-emerg_date <- date(as.POSIXct(unlist(dat_in_trial[i,"EmDate"]), origin = '1970-01-01'))
-harvest_date <- date(as.POSIXct(unlist(dat_in_trial[i,"HarvestDate"]), origin = '1970-01-01'))
-sow_doy <-yday(sow_date)
-emerg_doy <-yday(emerg_date)
-harvest_doy <-yday(harvest_date)
+dat_in_trial_i <- dat_in_trial[i,]
 
-## Update data frame with SMD = 1 at sowing and BBCH = 01 for all dates fr.o.m sowing
+## Update data frame with SMD = 1 at sowing and all dates thereafter
 smd_df <- smd_df %>% 
-  mutate(smd = replace(smd, doy >= sow_doy, 1),
-         bbch = replace(bbch, doy >= sow_doy, 01))
+  mutate(smd = replace(smd, bbch >= 01, 1))
 
 ############################################
 # SOIL MOISTURE DEFICIT
 
 ## Calculate daily change
+### Preparations
+
+
 ### Daily soil surface evaporation (SSE)
 smd_df <- smd_df %>%
   mutate(dSSE = ifelse(f < 1, min(1.5, et)*(1-f), 0))
+
+### Ea Actual Crop Evapotranspiration
+smd_df <- smd_df %>%
+  mutate(Eatmos = 1.2*f*et,
+         Eatmos = replace(Eatmos, Eatmos <= 0, 0.001),
+         Esoil = 2,
+         Ea = min(Eatmos, Esoil))
 
 #mutate
 dSMD <- dSSE + Ea - rain
