@@ -1,8 +1,8 @@
-# 780_growth_model
+# 905_BEETGRO
 
 Modelling potential sugar beet growth across the season.
 
-This model is a translation of the BBRO BeetGRO model into R. No changes have been made to the model, but the system is slightly different
+This model is a translation of the BBRO BeetGRO model into R. No changes have been made to the calculations in the model, but the system is slightly different
 
 ########################################################
 OPERATION
