@@ -74,7 +74,7 @@ for(i in 1:nrow(trial)){
 
 
   ############################################
-  # IMPORT DATA FROM LANTMET
+  # IMPORT DATA FROM LANTMET https://www.ffe.slu.se/lm/JSON/JSON-Specifikation.pdf
   if(source_i == "Lantmet"){
     ### create url values
     urlBase <- "https://www.ffe.slu.se/lm/json/downloadJS.cfm?outputType=CSV&AddID=1"
@@ -179,7 +179,7 @@ for(i in 1:nrow(trial)){
 
   # CREATE FILL WITH JUST THE DATA NEEDED
   dat_weather_i_abbrev <- dat_weather_i_full %>% 
-    select(doy,xtemp,precip,xvh,et)
+    select(doy,xtemp,precip,solin,xvh,et)
   
   ############################################
   # WRITE EXCEL

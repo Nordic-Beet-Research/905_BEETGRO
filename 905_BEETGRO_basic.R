@@ -1,26 +1,29 @@
 ############################################
 ############################################
 ##
-## BBRO BEETGRO MODEL
+## BBRO BEETGRO MODEL - TRANSPOSING OPENMODEL VERSION TO R
 ##
-## v1.0 - TRANSPOSING OPENMODEL VERSION TO R
+## v2023-01-18
 ##
 ## This project uses R 4.1.2 
 ## with snapshot date 2021-11-01
 ##
 ## 
 ## Aim is to build a system that: 
-## - reads in all the trial data from a single spreadsheet. Each TrialID is a unique trial site x year combination.
-## - reads in all the site weather data from site specific spreadsheets. Multiple years are currently housed in single site files. 
+## - reads in all the Trial data from a single spreadsheet. Each Trial is a unique Site x Year combination. Each Site is a single grower.
+## - reads in all the Site weather data either through an API or from grower submitted Site specific spreadsheets. 
+## -- Multiple years are currently housed in single site files (named Site###.xlsx). 
 ## -- This set-up suits most weather data systems, thus lends itself to automation. 
 ## -- It also means that with careful management of weather data files, .csv files for each site can be saved locally.
 ## - fills in any blanks in the data where possible.
-## - runs through the analysis for each TrialID and stores the results as appropriate.
-## - makes the results viewable via one or two dashboards
+## - runs through the analysis for each Trial and stores the results as appropriate.
+## - makes the results viewable via one or two dashboards.
 ##
 ## Current status:
-## - Ready to add in the soil moisture deficit (SMD) and canopy cover models.
-## - DON'T FORGET TO UPDATE THE README AS YOU GO!
+## - Weather data is run through the 905_BEETGRO_weather script. Can import from Lantmet. Saves as Site###_year.xlsx
+## - The soil moisture, canopy, and yield model seems to work at the Trial level. 
+## -- It's not yet set up to run through all the Trials in the TrialData.xlsx sheet, but not far from that.
+## -- Have not confirmed the results with a comparison to the OpenModel version
 ## 
 ############################################
 ############################################
@@ -96,7 +99,7 @@ b <- ifelse(trial_i$SoilB < 1, 2.1, trial_i$SoilB)
 pop1 <- ifelse(trial_i$POP1 < 90000, -0.0003*(trial_i$POP1/1000)^2+0.0456*(trial_i$POP1/1000)-1.0246, 1)
 pop2 <- ifelse(trial_i$POP2 < 90000, -0.0003*(trial_i$POP2/1000)^2+0.0456*(trial_i$POP2/1000)-1.0246, 1)
 pop3 <- ifelse(trial_i$POP3 < 90000, -0.0003*(trial_i$POP3/1000)^2+0.0456*(trial_i$POP3/1000)-1.0246, 1)
-poploss <- ifelse(trial_i$PlantPop == 0, 1, mean(pop1, pop2, pop3))
+pop_loss <- ifelse(trial_i$PlantPop == 0, 1, mean(pop1, pop2, pop3))
 
 ## Soil parameters, function of b
 qfc <- param$a2 * (param$a1/5)^(1/b)
@@ -136,7 +139,7 @@ emerg_doy <-yday(emerg_date)
 harvest_doy <-yday(harvest_date)
 
 BG_i <- weath %>%
-  select(doy, xtemp, precip, et
+  select(doy, xtemp, precip, solin, et
          ) %>%
 
 # Crop status
@@ -168,12 +171,14 @@ BG_i <- weath %>%
 # GOING ROW WISE(). BUT THE PROBLEM IS THAT YOU CAN'T LAG IN ROWWISE(), SO HAVE TO GO TO LOOP
 for(j in 1:(sow_doy-1)){
   BG_ij <- BG_i[j,] %>%
-    mutate(smd = 20,
-           smd0 = 20,
+    mutate(SMD = 20,
+           SMD0 = 20,
            qrel = 1,
            f = param$fZero,
            Cd_stress = 0,
-           SSE = 0)
+           SSE = 0,
+           biomass = 0,
+           yield = 0)
   
   if(j==1) BG_j <- BG_ij
   if(j!=1) BG_j <- bind_rows(BG_j, BG_ij)
@@ -181,11 +186,14 @@ for(j in 1:(sow_doy-1)){
 for(j in sow_doy:nrow(BG_i)){
   BG_ij <- BG_i[j,] %>%
     mutate(
-      # VALUES WITH LAGS
+      # VALUES WITH LAGS, AND REMOVING NEGATIVES
       qrel = BG_j$qrel[j-1],
-      smd = BG_j$smd[j-1], 
-      smd0 = case_when(doy == sow_doy ~ 0, smd < 0 ~ 0, T ~ smd), # This is smd from previous period, with min = 0
+      SMD = BG_j$SMD[j-1], 
+      SMD0 = case_when(doy == sow_doy ~ 0, SMD < 0 ~ 0, T ~ SMD), # This is SMD from previous period, with min = 0
       SSE = BG_j$SSE[j-1],
+      biomass = BG_j$biomass[j-1],
+      solin = replace(solin, solin < 0, 0),
+      yield = BG_j$yield[j-1],
       
       # CANOPY (f)
       w_stress = ifelse(qrel < trial_i$w_stressB & xtemp > trial_i$w_stressC, (qrel/trial_i$w_stressB)*trial_i$Wstresc, 1),
@@ -210,7 +218,7 @@ for(j in sow_doy:nrow(BG_i)){
       eatmos = 1.2*f*et,
       eatmos = replace(eatmos, eatmos <= 0, 0.001),
       # PARAMETERS
-      q = max(qfc - smd0/(root_depth*1000), 0.01), # depth is always greater than 0 post sowing, so if statement for q removed.
+      q = max(qfc - SMD0/(root_depth*1000), 0.01), # depth is always greater than 0 post sowing, so if statement for q removed.
       qrel = q/qfc,
       psi_soil = -5*(qrel)^(-b),
       rsum = param$c1 + param$c2/root_depth*(qrel^(-2*b+3)-1),
@@ -222,8 +230,19 @@ for(j in sow_doy:nrow(BG_i)){
       # ACTUAL CROP EVAPOTRANSPIRATION
       ea = min(eatmos, esoil),
       # SOIL MOISTURE DEFICIT NB: IF THIS GIVE A NEGATIVE RESULT, 0 IS USED WHEN SMD IS USED TO CALC q IN THE NEXT DAY.
-      dsmd = dSSE + ea - precip,
-      smd = smd0 + dsmd
+      dSMD = dSSE + ea - precip,
+      SMD = SMD0 + dSMD,
+      
+      
+      # RADIATION USE EFFICIENCY (RUE)
+      RUE = 0.6*trial_i$RUEZero1*exp(-trial_i$gamma_i*biomass)+0.4*trial_i$RUEZero1*(ea/eatmos)*exp(-trial_i$gamma_i*biomass),
+      
+      # YIELDS
+      dbiomass = RUE*f*solin, #There is a calculation for radiation in OpenModel, if solin is negative.
+      biomass = biomass + dbiomass,
+      yield = (yield + dbiomass*(trial_i$kappa*biomass/(1+trial_i$kappa*biomass))),
+      fsugar = (trial_i$kappa*biomass/(1+trial_i$kappa*biomass)),
+      yield_pop = pop_loss*yield
       )
   
   BG_j <- bind_rows(BG_j, BG_ij)
