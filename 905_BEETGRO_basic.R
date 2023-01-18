@@ -80,46 +80,17 @@
 param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"),names_from = parameter)
 # read in trial data
 trial <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
-# read in weather data FOR DEVELOPMENT. SYSTEM BELOW IS FOR NORMAL OPERATION.
-weath <- read_xlsx("dat_weather_2021_40141.xlsx", sheet = "Sheet1")
-# read which sites are in trail data, and read in appropriate weather data
-SiteIDs <- unique(trial$SiteID)
-Sites <- data.frame("year" = numeric(),
-                    "doy" = numeric(),
-                    "Tmax" = numeric(),
-                    "Tmin" = numeric(),
-                    "Rain" = numeric(),
-                    "Solar" = numeric(),
-                    "Epenman" = numeric(),
-                    "Windspeed" = numeric())
-file_names <- list.files()
-missing_files <- character()
-for(i in length(SiteIDs)){
-  SiteID_i <- paste0("Site",sprintf("%03d",SiteIDs[i]),".xlsx")
-  if(!(SiteID_i %in% file_names)) missing_files <- c(missing_files, SiteID_i)
-}
-if(length(missing_files) == 0){
-  for(i in length(SiteIDs)){
-    SiteID_i <- paste0("Site",sprintf("%03d",SiteIDs[i]))
-    Site_i <- read_xlsx(paste0(SiteID_i,".xlsx"))
-    Sites <- Sites %>%
-      add_row(Site_i)
-    rm(Site_i)
-  }
-} else {
-  stop(paste0("Missing weather data files: ", missing_files, 
-              "\n", "Maybe it/ they just need to be renamed?",
-              "\n", "The name should be in the format Site###.xlsx"))
-}
 
 ############################################
 # INITIATE A SINGLE TRIAL "i" (TRIAL = SITE x YEAR)
 
-i=7L
-
 ## START LOOP HERE!
 
+i=1L
 trial_i <- trial[i,]
+
+# read in weather data FOR DEVELOPMENT. SYSTEM BELOW IS FOR NORMAL OPERATION.
+weath <- read_xlsx(paste0("./weather/Site",sprintf("%03d", trial_i$SiteID),"_",trial_i$Year,".xlsx"), sheet = "Sheet1")
 
 b <- ifelse(trial_i$SoilB < 1, 2.1, trial_i$SoilB)
 pop1 <- ifelse(trial_i$POP1 < 90000, -0.0003*(trial_i$POP1/1000)^2+0.0456*(trial_i$POP1/1000)-1.0246, 1)
@@ -165,7 +136,7 @@ emerg_doy <-yday(emerg_date)
 harvest_doy <-yday(harvest_date)
 
 BG_i <- weath %>%
-  select(doy, xtemp, ned, et
+  select(doy, xtemp, precip, et
          ) %>%
 
 # Crop status
@@ -185,7 +156,7 @@ BG_i <- weath %>%
   mutate(
     Cd_sow = cumsum(dT),
     Cd_sow = replace(Cd_sow, bbch == 00, 0),
-    bbch = replace(bbch, trial_i$EmDOY <= trial_i$SowDOY & Cd_sow >= param$Tzero, 01)
+    bbch = replace(bbch, emerg_doy <= sow_doy & Cd_sow >= param$Tzero, 01)
   ) %>%
   group_by(emerged = bbch >= 09) %>%
   mutate(
@@ -233,7 +204,7 @@ for(j in sow_doy:nrow(BG_i)){
       # SSE SOIL SURFACE EVAPORATION
       dSSE = ifelse(f < 1, min(1.5, et)*(1-f), 0),
       dSSE = replace(dSSE, SSE > 20, 0),
-      SSE = SSE + dSSE - ned,
+      SSE = SSE + dSSE - precip,
       SSE = replace(SSE, SSE < 0, 0),
       # ATMOSPHERE LIMITED CROP TRANSPIRATION
       eatmos = 1.2*f*et,
@@ -251,7 +222,7 @@ for(j in sow_doy:nrow(BG_i)){
       # ACTUAL CROP EVAPOTRANSPIRATION
       ea = min(eatmos, esoil),
       # SOIL MOISTURE DEFICIT NB: IF THIS GIVE A NEGATIVE RESULT, 0 IS USED WHEN SMD IS USED TO CALC q IN THE NEXT DAY.
-      dsmd = dSSE + ea - ned,
+      dsmd = dSSE + ea - precip,
       smd = smd0 + dsmd
       )
   
@@ -266,7 +237,7 @@ BG_i <- BG_i %>%
   left_join(BG_j, by ="doy")
 
 # SAVE OUTPUT FILE BY TRIAL (SITE x YEAR)
-write_xlsx(BG_i, paste0("BG_",trial_i$SiteID,"_",trial_i$Year,".xlsx"))
+write_xlsx(BG_i, paste0("./results/BG_Site",sprintf("%03d", trial_i$SiteID),"_",trial_i$Year,".xlsx"))
 
 ## END LOOP HERE
 

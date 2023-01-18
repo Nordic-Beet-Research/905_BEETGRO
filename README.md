@@ -8,16 +8,29 @@ This model is a translation of the BBRO BeetGRO model into R. No changes have be
 OPERATION
 
 To run the model, ensure you have:
+# The right R setup
 - R (version 4.1.2: https://cran.r-project.org/bin/windows/base/old/4.1.2/)
 - R studio (https://www.rstudio.com/products/rstudio/download/#download)
 - A directory that mirrors the system environment variable R_LIBS or R_LIBS_USER. In this version, the directory C:/R packages_412. This can be changed at line 51.
-- The model file "780_BEETGRO_v1.R"
+# The right scripts
+- The model files.
+-- One of the weather import and manipulation files. "905_BEETGRO_weather"
+-- One of the model files. "905_BEETGRO_basic.R"
+# The right input data
 - input files, housed in the same directory as the model file.
 -- "parameters.xlsx" (One file total. Contains model parameters that shouldn't be modified.)
 -- "TrialData.xlsx" (One file total. Contains a list of the trials that are to be analysed. A trial = a unique site x year combination.)
--- "Site###.xlsx" (One file per site listed in TrialData.xlsx. Must contain weather data for the all years used in the definition of a trial.)
 
-In a future version, this whole system will be thrown in a Dockr or run through a shell file, so these set-up issues will disappear...
+What is run is based on what is in the TrialData.xlsx file. That is, the system will work through each row of this file. Note that there are two changes in the NBR version of this file; 1. Dates are used instead of Day-Of-Year, 2. A source to the weather data is given. This weather data source will determine how where raw data is imported from. This is currently either Lantmet in Sweden, or a separate .xlsx file. 
+
+Weather data: 
+- The weather data source is defined in TrialData. 
+-- It can be either "Lantmet" or "File". 
+--- "Lantmet" will query the Lantmet database for the weather station specified in the column "LantmetID". 
+--- "File" will query the directory "./weather" for the right Site. 
+---- If using "File", there should be one .xlsx file of the raw weather data per Site (= per grower ID), with one day per row, and with the name Site###.xlsx. 
+---- As many years of data as necessary can be entered, but each year that is analysed should be complete. 
+- The output file from the 905_BEETGRO_weather.R script will be one .xlsx file per Trial.
 
 ########################################################
 THE MODEL
