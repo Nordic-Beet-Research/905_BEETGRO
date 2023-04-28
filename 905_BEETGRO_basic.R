@@ -51,7 +51,9 @@
     "tidyr_1.1.4",
     "readxl_1.3.1",
     "writexl_1.4.0",
-    "lubridate_1.8.0"
+    "lubridate_1.8.0",
+    "RPostgreSQL_0.7-3",
+    "RPostgres_1.4.1"
   )
   
   path_Rpackages = "C:/R packages_412"
@@ -80,19 +82,22 @@
 # READ IN DATA
 
 # read in model parameters
-param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"),names_from = parameter)
+param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"), names_from = parameter)
 # read in trial data
-# trial <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
+trial <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
 ## CONNECT TO DATABASE
 
-con <- dbConnect(RPostgres::Postgres(),
-                 user="postgres", 
-                 password="easy",
-                 host="localhost", 
-                 port=5433,
-                 dbname="nbyc")
+# con <- dbConnect(RPostgres::Postgres(),
+#                  user="postgres", 
+#                  password="easy",
+#                  host="localhost", 
+#                  port=5433,
+#                  dbname="nbyc")
+# 
+# trial <- dbGetQuery(con, "SELECT * FROM trials")
 
-trial <- dbGetQuery(con, "SELECT * FROM trials")
+#dbDisconnect(con)
+#rm(con)
 
 ############################################
 # INITIATE A SINGLE TRIAL "i" (TRIAL = SITE x YEAR)
@@ -102,28 +107,28 @@ trial <- dbGetQuery(con, "SELECT * FROM trials")
 i=1L
 trial_i <- trial[i,]
 
-# read in weather data FOR DEVELOPMENT. SYSTEM BELOW IS FOR NORMAL OPERATION.
+# read in weather data FOR DEVELOPMENT. THIS CURRENTLY ASSUMES WEATHER DATA BY SITE X YEAR, WITH EVAPOTRANSPIRATION SORTED.
 weath <- read_xlsx(paste0("./weather/Site",sprintf("%03d", trial_i$site),"_",trial_i$year,".xlsx"), sheet = "Sheet1")
 
-b <- ifelse(trial_i$soil_b < 1, 2.1, trial_i$soil_b)
+soil_b <- ifelse(trial_i$soil_b < 1, 2.1, trial_i$soil_b)
 pop1 <- ifelse(trial_i$pop1 < 90000, -0.0003*(trial_i$pop1/1000)^2+0.0456*(trial_i$pop1/1000)-1.0246, 1)
 pop2 <- ifelse(trial_i$pop2 < 90000, -0.0003*(trial_i$pop2/1000)^2+0.0456*(trial_i$pop2/1000)-1.0246, 1)
 pop3 <- ifelse(trial_i$pop3 < 90000, -0.0003*(trial_i$pop3/1000)^2+0.0456*(trial_i$pop3/1000)-1.0246, 1)
 pop_loss <- ifelse(trial_i$plant_pop == 0, 1, mean(pop1, pop2, pop3))
 
-## Soil parameters, function of b
-qfc <- param$a2 * (param$a1/5)^(1/b)
-qpwp <- param$a2 * (param$a1/1500)^(1/b)
+## Soil parameters, function of soil_b
+soil_qfc <- param$a2 * (param$a1/5)^(1/soil_b)
+soil_qpwp <- param$a2 * (param$a1/1500)^(1/soil_b)
 
-## Soil parameters, grouped by b
-if(b > 20){
+## Soil parameters, grouped by soil_b
+if(soil_b > 20){
   trial_i <- trial_i %>%
     mutate(
       kappa = 0.0008,
       gamma_i = 0.00002701,
-      w_stressA = 5,
-      w_stressB = 0.8,
-      w_stressC = 200,
+      stress_wA = 5,
+      stress_wB = 0.8,
+      stress_wC = 200,
       rue_zero1 = 2.1
   )
 } else {
@@ -131,9 +136,9 @@ if(b > 20){
     mutate(
       kappa = 0.0027,
       gamma_i = 0.00014,
-      w_stressA = 2,
-      w_stressB = 0.6,
-      w_stressC = 300,
+      stress_wA = 2,
+      stress_wB = 0.6,
+      stress_wC = 300,
       rue_zero1 = param$rue_zero
   )
 }
@@ -141,118 +146,119 @@ if(b > 20){
 ############################################
 # TABLE OF EACH PARAMETER FOR EACH DAY OF YEAR FOR TRIAL "i".
 
-sow_date <- as.Date(unlist(trial_i["sow_date"]), origin = '1970-01-01')
-emerg_date <- as.Date(unlist(trial[i,"em_date"]), origin = '1970-01-01')
-harvest_date <- as.Date(unlist(trial[i,"harvest_date"]), origin = '1970-01-01')
-sow_doy <-yday(sow_date)
-emerg_doy <-yday(emerg_date)
-harvest_doy <-yday(harvest_date)
+date_sow <- date(as.POSIXct(unlist(trial_i["date_sow"]), origin = '1970-01-01'))
+date_emerg <- date(as.POSIXct(unlist(trial[i,"date_emerg"]), origin = '1970-01-01'))
+date_harvest <- date(as.POSIXct(unlist(trial[i,"date_harvest"]), origin = '1970-01-01'))
+doy_sow <-yday(date_sow)
+doy_emerg <-yday(date_emerg)
+doy_harvest <-yday(date_harvest)
 
 BG_i <- weath %>%
-  select(doy, xtemp, precip, solin, et
+  select(doy, temp_x, precip, radiation_solar, evap
          ) %>%
 
 # Crop status
   mutate(bbch = 00,
-         bbch = replace(bbch, doy >= sow_doy, 01),
-         bbch = replace(bbch, doy >= emerg_doy, 09),
-         bbch = replace(bbch, doy >= harvest_doy, 99)
+         bbch = replace(bbch, doy >= doy_sow, 01),
+         bbch = replace(bbch, doy >= doy_emerg, 09),
+         bbch = replace(bbch, doy >= doy_harvest, 99)
          ) %>% 
 
 # Temperature
   mutate(
-    #xtemp = (Tmax + Tmin)/2, # Called Temp in OpenModel
-    d_t = xtemp - param$Tbase,
-    d_t = replace(d_t, d_t < 0, 0)
+    #temp_x = (Tmax + Tmin)/2, # Called Temp in OpenModel
+    temp_b_d = temp_x - param$Tbase,
+    temp_b_d = replace(temp_b_d, temp_b_d < 0, 0)
     ) %>%
   group_by(sown = bbch >= 01) %>%
   mutate(
-    cd_sow = cumsum(d_t),
-    cd_sow = replace(cd_sow, bbch == 00, 0),
-    bbch = replace(bbch, emerg_doy <= sow_doy & cd_sow >= param$Tzero, 01)
+    temp_b_cd_sow = cumsum(temp_b_d),
+    temp_b_cd_sow = replace(temp_b_cd_sow, bbch == 00, 0),
+    bbch = replace(bbch, doy_emerg <= doy_sow & temp_b_cd_sow >= param$Tzero, 01)
   ) %>%
   group_by(emerged = bbch >= 09) %>%
   mutate(
-    cd_em = cumsum(d_t) + 90,
-    cd_em = replace(cd_em, bbch < 09, 0)
+    temp_b_cd_em = cumsum(temp_b_d) + 90,
+    temp_b_cd_em = replace(temp_b_cd_em, bbch < 09, 0)
   ) %>%
   ungroup
 
-# GOING ROW WISE(). BUT THE PROBLEM IS THAT YOU CAN'T LAG IN ROWWISE(), SO HAVE TO GO TO LOOP
-for(j in 1:(sow_doy-1)){
+# GOING ROW WISE(). BUT THE PROBLEM IS THAT YOU CAN'T LAG IN DPLYR::ROWWISE(), SO HAVE TO GO TO LOOP
+for(j in 1:(doy_sow-1)){
   BG_ij <- BG_i[j,] %>%
-    mutate(smd = 20,
-           smd0 = 20,
-           qrel = 1,
-           f = param$fZero,
-           cd_stress = 0,
-           sse = 0,
-           biomass = 0,
-           yield = 0)
+    mutate(soil_md = 20,
+           soil_md_0 = 20,
+           soil_qrel = 1,
+           canopy_cover = param$fZero,
+           temp_s_cd = 0,
+           evap_soil = 0,
+           yield_biom = 0,
+           yield_root = 0)
   
   if(j==1) BG_j <- BG_ij
   if(j!=1) BG_j <- bind_rows(BG_j, BG_ij)
 }
-for(j in sow_doy:nrow(BG_i)){
+for(j in doy_sow:nrow(BG_i)){
   BG_ij <- BG_i[j,] %>%
     mutate(
-      # VALUES WITH LAGS, AND REMOVING NEGATIVES
-      qrel = BG_j$qrel[j-1],
-      smd = BG_j$smd[j-1], 
-      smd0 = case_when(doy == sow_doy ~ 0, smd < 0 ~ 0, T ~ smd), # This is SMD from previous period, with min = 0
-      sse = BG_j$sse[j-1],
-      biomass = BG_j$biomass[j-1],
-      solin = replace(solin, solin < 0, 0),
-      yield = BG_j$yield[j-1],
+      # VALUES WITH LAGS, AND REMOVING NEGATIVES.
+      soil_qrel = BG_j$soil_qrel[j-1],
+      soil_md = BG_j$soil_md[j-1], 
+      soil_md_0 = case_when(doy == doy_sow ~ 0, soil_md < 0 ~ 0, T ~ soil_md), # This is soil_md from previous period, with min = 0
+      evap_soil = BG_j$evap_soil[j-1],
+      yield_biom = BG_j$yield_biom[j-1],
+      radiation_solar = replace(radiation_solar, radiation_solar < 0, 0),
+      yield_root = BG_j$yield_root[j-1],
       
-      # CANOPY (f)
-      w_stress = ifelse(qrel < trial_i$w_stressB & xtemp > trial_i$w_stressC, (qrel/trial_i$w_stressB)*trial_i$w_stressC, 1),
-      xt_stress = ifelse(xtemp > 3 & xtemp < 25 & bbch >= 09, (xtemp-3) * w_stress, 0), # xtemp Called Weather.DailyTemp in OpenModel, xt_stress called DailyTemp in OpenModel
-      cd_stress = unlist(BG_j[j-1,"cd_stress"]) + xt_stress, # Cd_stress called TotalTemp in OpenModel
-      f_temp = cd_stress * 0.001,
-      f_temp = replace(f_temp, f_temp < 0.00001, 0.00001),
-      cd_stress = replace(cd_stress, cd_stress > 950, 950),
-      f = 0.0015 + (0.99-0.0015)/(1+exp(-4*log(f_temp/(1-f_temp)))),
+      # CANOPY (canopy_cover)
+      stress_water = ifelse(soil_qrel < trial_i$stress_wB & temp_b_cd_em > trial_i$stress_wC, (soil_qrel/trial_i$stress_wB)^trial_i$stress_wC, 1),
+      temp_s_d = ifelse(temp_b_d > 0 & temp_b_d < 22 & bbch >= 09, temp_b_d * stress_water, 0), # temp_x Called Weather.DailyTemp in OpenModel, temp_s_d called DailyTemp in OpenModel
+      temp_s_cd = unlist(BG_j[j-1,"temp_s_cd"]) + temp_s_d, # temp_s_cd called TotalTemp in OpenModel
+      temp_s_cd = ifelse(doy == doy_emerg, 90 + temp_s_d, temp_s_cd),
+      temp_f = temp_s_cd * 0.001,
+      temp_f = replace(temp_f, temp_f < 0.00001, 0.00001),
+      temp_s_cd = replace(temp_s_cd, temp_s_cd > 950, 950),
+      canopy_cover = 0.0015 + (0.99-0.0015)/(1+exp(-4*log(temp_f/(1-temp_f)))),
 
       # ROOT DEPTH (is sowing depth until emergence.)
-      root_depth = param$Dsowing + param$length0*exp(param$beta0/param$delta*(1-exp(-param$delta*(cd_em-param$Tzero)))),
+      root_depth = param$Dsowing + param$length0*exp(param$beta0/param$delta*(1-exp(-param$delta*(temp_b_cd_em-param$Tzero)))),
       root_depth = replace(root_depth, bbch < 09, param$Dsowing),
 
       # WATER RELATIONS
       # SSE SOIL SURFACE EVAPORATION
-      d_sse = ifelse(f < 1, min(1.5, et)*(1-f), 0),
-      d_sse = replace(d_sse, sse > 20, 0),
-      sse = sse + d_sse - precip,
-      sse = replace(sse, sse < 0, 0),
+      evap_soil_d = min(1.5, evap)*(1-canopy_cover), # this did have if canopy_covere <1, but it always is.
+      evap_soil_d = replace(evap_soil_d, evap_soil > 20, 0),
+      evap_soil = evap_soil + evap_soil_d - precip,
+      evap_soil = replace(evap_soil, evap_soil < 0, 0),
       # ATMOSPHERE LIMITED CROP TRANSPIRATION
-      eatmos = 1.2*f*et,
-      eatmos = replace(eatmos, eatmos <= 0, 0.001),
+      evap_cal = 1.2*canopy_cover*evap,
+      evap_cal = replace(evap_cal, evap_cal <= 0, 0.001),
       # PARAMETERS
-      q = max(qfc - smd0/(root_depth*1000), 0.01), # depth is always greater than 0 post sowing, so if statement for q removed.
-      qrel = q/qfc,
-      psi_soil = -5*(qrel)^(-b),
-      rsum = param$c1 + param$c2/root_depth*(qrel^(-2*b+3)-1),
-      hc_soil = qrel^(2*b+3),
+      soil_q = max(soil_qfc - soil_md_0/(root_depth*1000), 0.01), # depth is always greater than 0 post sowing, so if statement for soil_q removed.
+      soil_qrel = soil_q/soil_qfc,
+      psi_soil = -5*(soil_qrel)^(-soil_b),
+      rsum = param$c1 + param$c2/root_depth*(soil_qrel^(-1*(2*soil_b+3))-1),
+      soil_hc = soil_qrel^(2*soil_b+3),
       # SOIL LIMITED MAXIMUM CROP TRANSPIRATION
-      esoil = (psi_soil - param$psiCrop)/rsum,
-      rsum = replace(rsum, qrel == 0, param$c1),
-      esoil = replace(esoil, qrel == 0, 0),
+      evap_csl = (psi_soil - param$psiCrop)/rsum,
+      rsum = replace(rsum, soil_qrel == 0, param$c1),
+      evap_csl = replace(evap_csl, soil_qrel == 0, 0),
       # ACTUAL CROP EVAPOTRANSPIRATION
-      ea = min(eatmos, esoil),
-      # SOIL MOISTURE DEFICIT NB: IF THIS GIVE A NEGATIVE RESULT, 0 IS USED WHEN SMD IS USED TO CALC q IN THE NEXT DAY.
-      d_smd = d_sse + ea - precip,
-      smd = smd0 + d_smd,
+      evap_actual = min(evap_cal, evap_csl),
+      # SOIL MOISTURE DEFICIT NB: IF THIS GIVE A NEGATIVE RESULT, 0 IS USED WHEN SMD IS USED TO CALC soil_q IN THE NEXT DAY.
+      soil_md_d = evap_soil_d + evap_actual - precip,
+      soil_md = soil_md_0 + soil_md_d,
       
       
       # RADIATION USE EFFICIENCY (rue)
-      rue = 0.6*trial_i$rue_zero1*exp(-trial_i$gamma_i*biomass)+0.4*trial_i$rue_zero1*(ea/eatmos)*exp(-trial_i$gamma_i*biomass),
+      rue = 0.6*trial_i$rue_zero1*exp(-trial_i$gamma_i*yield_biom)+0.4*trial_i$rue_zero1*(evap_actual/evap_cal)*exp(-trial_i$gamma_i*yield_biom),
       
       # YIELDS
-      d_biomass = rue*f*solin, #There is a calculation for radiation in OpenModel, if solin is negative.
-      biomass = biomass + d_biomass,
-      yield = (yield + d_biomass*(trial_i$kappa*biomass/(1+trial_i$kappa*biomass))),
-      fsugar = (trial_i$kappa*biomass/(1+trial_i$kappa*biomass)),
-      yield_pop = pop_loss*yield
+      yield_biom_d = rue*canopy_cover*radiation_solar, #There is a calculation for radiation in OpenModel, if radiation_solar is negative.
+      yield_biom = yield_biom + yield_biom_d,
+      yield_root = (yield_root + yield_biom_d*(trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom))),
+      yield_sugar = (trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom)),
+      yield_pop = pop_loss*yield_root
       )
   
   BG_j <- bind_rows(BG_j, BG_ij)
@@ -274,11 +280,17 @@ BG_i$id <- trial_i$id*1000+BG_i$doy # Add id that is unique forever to allow dat
 write_xlsx(BG_i, paste0("./results/BG_Site",sprintf("%03d", trial_i$site),"_",trial_i$year,".xlsx"))
 
 # SAVE OUTPUT TO SELECTED DATASETS FOR DISPLAY
-dbWriteTable(con, "results", BG_i, append=T)
-dbDisconnect(con)
-rm(con)
+# dbWriteTable(con, "results", BG_i, append=T)
+# dbDisconnect(con)
+# rm(con)
 
 ## END LOOP HERE
 
-
-
+ggplot(BG_i, aes(x = doy, y = soil_md)) +
+  geom_line() +
+  geom_vline(xintercept = doy_emerg) +
+  geom_vline(xintercept = doy_sow) + 
+  geom_vline(xintercept = doy_harvest) +
+  geom_vline(xintercept = 150) + 
+  geom_vline(xintercept = 160) + 
+  geom_vline(xintercept = 210)

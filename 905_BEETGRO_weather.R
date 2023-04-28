@@ -33,7 +33,8 @@
     "ggplot2_3.3.5",
     "dplyr_1.0.7",
     "writexl_1.4.0",
-    "lubridate_1.8.0"
+    "lubridate_1.8.0",
+    "readxl_1.3.1"
   )
   
   path_Rpackages = "C:/R packages_412"
@@ -62,34 +63,34 @@
 # IMPORT TRIALDATA AND EXTRACT WEATHER DATA SOURCES
 ## Read in trial data
 trial <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
+param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"), names_from = parameter)
 
 i=1L
 
-trial_i <- trial[i,]
-
 for(i in 1:nrow(trial)){
-  source_i <- trial_i$Weather_source
-  if(source_i == "Lantmet") source_id_i <- trial_i$Lantmet
-  if(source_i == "File") source_id_i <- paste0("./weather/Site",sprintf("%03d", trial_i$SiteID),".xlsx")
+  trial_i <- trial[i,]
+  source_i <- trial_i$weather_source
+  if(source_i == 1) source_id_i <- trial_i$weather_source_info # 1 == Lantmet, 2 == File
+  if(source_i == 2) source_id_i <- paste0("./weather/Site",sprintf("%03d", trial_i$SiteID),".xlsx")
 
 
   ############################################
   # IMPORT DATA FROM LANTMET https://www.ffe.slu.se/lm/JSON/JSON-Specifikation.pdf
-  if(source_i == "Lantmet"){
+  if(source_i == 1){
     ### create url values
     urlBase <- "https://www.ffe.slu.se/lm/json/downloadJS.cfm?outputType=CSV&AddID=1"
-    startDate <-  date(ISOdatetime(year = as.integer(trial_i$Year,'%Y'),
+    startDate <-  date(ISOdatetime(year = as.integer(trial_i$year,'%Y'),
                                    month = as.integer("01",'%m'),
                                    day = as.integer("01",'%d'),
                                    hour = 00, min = 00, sec = 00, tz = "UTC"))
-    endDate <- date(ISOdatetime(year = as.integer(trial_i$Year,'%Y'),
+    endDate <- date(ISOdatetime(year = as.integer(trial_i$year,'%Y'),
                                 month = as.integer("12",'%m'),
                                 day = as.integer("31",'%d'),
                                 hour = 00, min = 00, sec = 00, tz = "UTC"))
     logInterval <- 2                                # 1= hourly, 2 = daily
     elementMeasurement <- "TM,TN,TX,RR,FM2,Q0,UM,UN,UX"
     names_old <- c("DAY","TM","TN","TX","RR","FM2","Q0","UM","UN","UX")
-    names_new <- c("date","xtemp","ltemp","htemp","precip","xvh","solin","xhum","lhum","hhum")
+    names_new <- c("date","temp_x","temp_l","temp_h","precip","vh_x","radiation_solar","hum_x","hum_l","hum_h")
     
     ### create url
     urlStation <- paste0("weatherStationID=",source_id_i)
@@ -105,25 +106,47 @@ for(i in 1:nrow(trial)){
     # Fixing parameters
     dat_weather_i <- dat_Lantmet %>%
       select(!c("HOUR","WSTNID")) %>% 
-      rename_at(vars(names_old), ~ names_new) %>% 
+      rename_at(vars(all_of(names_old)), ~ names_new) %>% 
       mutate(doy = yday(date),
-             xvh = replace(xvh, xvh == "NA", 2))
+             vh_x = replace(vh_x, vh_x == "NA", 2))
     
-    wind_height <- 2
-    mamsl <- trial_i$Elevation
-    lat <- trial_i$Latitude
+    wind_height <- 2 # height above ground at which wind is measured
+    Albedo <- param$Albedo
+    SBconstant <- param$SBconstant
+    mamsl <- trial_i$elevation
+    lat <- trial_i$latitude
   }
+  
+  ############################################
+  # CREATE DATAFRAME THAT WILL ALLOW FOR FORECASTING AND FOR MISSING WEATHER DATA TO BE FILLED
+  dat_weather_i_full <- data.frame(doy = 1:365)
+  
+  ## FORECAST METHOD
+  forecast_method <- 1 # 1 = use historical averages from region. 2 = use specific year and station
+  ### BUILD THIS OUT LIKE WITH THE HARVEST AND STORAGE MODEL
+  #### TREAT THIS LIKE MISSING DATA, AND SO JUST FILL OUT IN THE MISSING DATA PROCESS BELOW.
+  #### ALSO PROVIDE THE OPTION THAT 
+  
+  ## MISSING DATA
+  dat_weather_i_missing <- dat_weather_i[rowSums(is.na(dat_weather_i)) > 0,]
+  ### BUILD THIS OUT USING THE HISTORICAL DATA SETS
+  #### WILL USE HISTORICAL DATA TO FILL THIS OUT. THE SYSTEM NEEDS TO BE ABLE TO LOOK AT EACH CELL INDIVIDUALLY.
+  #### THERE ARE MODELS AVAILABLE FROM THE BeetGRO MODEL FOR SOME OF THESE PARAMETERS, BUT I'M JUST GOING TO USE HISTORICAL DATA INSTEAD.
+  #### THE USER WILL HAVE TO CHOOSE FROM A DROP-DOWN LIST WHICH HISTORICAL DATA THEY WANT TO USE TO FILL MISSING.
+  
+  dat_weather_i_full <- dat_weather_i_full %>% 
+    left_join(dat_weather_i, by = "doy")
   
   ############################################
   # CALCULATE ET, AND THE STEPS ALONG THE WAY
   
-  dat_weather_i_full <- dat_weather_i %>% 
+  dat_weather_i_full <- dat_weather_i_full %>% 
     mutate(
       # WIND SPEED AT GROUND LEVEL
-      wind_ground = xvh * 4.87/log(67.8*wind_height-5.42),
+      wind_ground = vh_x * 4.87/log(67.8*wind_height-5.42),
           
       # SLOPE OF THE SATURATION PRESSURE CURVE
-      slopesat = 4098*(0.6108*exp(17.27*xtemp/(xtemp+237.3)))/(xtemp+237.3)^2,
+      press_slope = 4098*(0.6108*exp(17.27*temp_x/(temp_x+237.3)))/(temp_x+237.3)^2,
   
       # PRESSURE
       press = 101.3*((293-0.0065*mamsl)/293)^5.26,
@@ -132,54 +155,54 @@ for(i in 1:nrow(trial)){
       psychroC = 0.000665*press,
   
       # DELTA
-      delta = slopesat/(slopesat+psychroC*(1+0.34*xvh)),
+      delta = press_slope/(press_slope+psychroC*(1+0.34*vh_x)),
   
       # PSI
-      psi = psychroC/(slopesat+psychroC*(1+0.34*xvh)),
+      psi = psychroC/(press_slope+psychroC*(1+0.34*vh_x)),
       
       # TEMP TERM
-      tempt = 900*xvh/(xtemp+273),
+      temp_t = 900*vh_x/(temp_x+273.15),
       
       # SATURATION PRESSURE MAX
-      satPress_max = 0.6108*exp(17.27*htemp/(htemp+237.3)),
+      press_sat_h = 0.6108*exp(17.27*temp_h/(temp_h+237.3)),
       
       # SATURATION PRESSURE MIN
-      satPress_min = 0.6108*exp(17.27*ltemp/(ltemp+237.3)),
+      press_sat_l = 0.6108*exp(17.27*temp_l/(temp_l+237.3)),
       
       # VAPOUR PRESSURE
-      vapourPress = (satPress_max*hhum/100 + satPress_min*lhum/100)/2,
+      press_vapour = (press_sat_h*hum_h/100 + press_sat_l*hum_l/100)/2,
       
       # INVERTED SUN DISTANCE
-      invSun = 1 + 0.033*cos(2*pi/365*doy),
+      sun_dist = 1 + 0.033*cos(2*pi/365*doy),
       
       # SUN DECLINATION
-      sunDecl = 0.409*sin(2*pi/365*doy - 1.39),
+      sun_decl = 0.409*sin(2*pi/365*doy - 1.39),
       
       # SUN ANGLE
-      sunAngle = acos(-tan(lat*pi/180)*tan(sunDecl)),
+      sun_angle = acos(-tan(lat*pi/180)*tan(sun_decl)),
       
       # SPACE RADIATION
-      spaceRadiation = 24*60/pi*0.082*invSun*(sunAngle*sin(lat*pi/180)*sin(sunDecl)+cos(lat*pi/180)*cos(sunDecl)*sin(sunAngle)),
+      radiation_space = 24*60/pi*0.082*sun_dist*(sun_angle*sin(lat*pi/180)*sin(sun_decl)+cos(lat*pi/180)*cos(sun_decl)*sin(sun_angle)),
       
       # GLOBAL RADIATION
-      globalRadiation = (0.75+2*10^(-5)*mamsl)*spaceRadiation,
+      radiation_global = (0.75+2*10^(-5)*mamsl)*radiation_space,
       
       # NET RADIATION
-      netRadiation = (1-0.23)*solin,
+      radiation_net = (1-Albedo)*radiation_solar,
       
-      # LONGTERM RADIATION
-      longtermRadiation = 4.903*10^(-9)*((ltemp+273.16)^4+(htemp+273.16)^4)/2*(0.34-0.14*vapourPress^0.5)*(1.35*solin/globalRadiation-0.35),
+      # LONG-WAVE RADIATION
+      radiation_LW = SBconstant*10^(-9)*((temp_l+273.16)^4+(temp_h+273.16)^4)/2*(0.34-0.14*press_vapour^0.5)*(1.35*radiation_solar/radiation_global-0.35),
       
       # RADIATION BALANCE
-      radiationBalance = 0.408*(netRadiation - longtermRadiation),
+      radiation_balance = 0.408*(radiation_net - radiation_LW),
       
       # EVAPOTRANSPIRATION
-      et = delta * radiationBalance + psi * tempt * ((satPress_max + satPress_min)/2 - vapourPress)
+      evap = delta * radiation_balance + psi * temp_t * ((press_sat_h + press_sat_l)/2 - press_vapour)
     )
 
   # CREATE FILL WITH JUST THE DATA NEEDED
   dat_weather_i_abbrev <- dat_weather_i_full %>% 
-    select(doy,xtemp,precip,solin,xvh,et)
+    select(doy,temp_x,precip,radiation_solar,vh_x,evap)
   
   ############################################
   # WRITE EXCEL
