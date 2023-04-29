@@ -18,26 +18,41 @@ library(tidyr)
 library(lubridate)
 library(plotly)
 library(ggplot2)
+library(shinyauthr)
 
-# DEVELOPMENT
+# DEVELOPMENT DATA
 # param <- pivot_wider(read_xlsx("./905_NBYC_Shiny_local/www/parameters.xlsx", sheet = "parameters"), names_from = parameter)
 # trial <- read_xlsx("./905_NBYC_Shiny_local/www/TrialData.xlsx", sheet = "TrialData") 
 # users <- unique(trial$user)
-# weath <- read_xlsx("./905_NBYC_Shiny_local/www/Site001_2015.xlsx", sheet = "Sheet1")
+# weath <- read_xlsx("./905_NBYC_Shiny_local/www/Site001.xlsx", sheet = "Sheet1")
 # mod_vars <- c("evap_actual","soil_md","canopy_cover","yield_root","yield_sugar","yield_biom")
 
+# RunApp DATA
 param <- pivot_wider(read_xlsx("./www/parameters.xlsx", sheet = "parameters"), names_from = parameter)
 trial <- read_xlsx("./www/TrialData.xlsx", sheet = "TrialData")
-users <- unique(trial$user)
-weath <- read_xlsx("./www/Site001_2015.xlsx", sheet = "Sheet1")
-mod_vars <- c("evap_actual","soil_md","canopy_cover","yield_root","yield_sugar","yield_biom")
+users <- unique(trial$user_text)
+weath <- read_xlsx("./www/Site001.xlsx", sheet = "Sheet1")
+mod_vars <- c("Soil Moisture Deficit", "Precipitation","Evapotranspiration", "Canopy Cover", "Yield - Root", "Yield - Sugar", "Yield - Biomass")
+mod_vars_ <- c("soil_md","precip","evap_actual","canopy_cover","yield_root","yield_sugar","yield_biom")
+
+
+# LOGIN DETAILS
+# user_base <- tibble::tibble(
+#   user = c("user1", "user2"),
+#   password = sapply(c("pass1", "pass2"), sodium::password_store),
+#   permissions = c("admin", "standard"),
+#   name = c("User One", "User Two")
+# )
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
 
     # Application title
     titlePanel("Nordic Beet Yield Challenge"),
-
+    
+    # login section
+    # shinyauthr::loginUI(id = "login"),
+    
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
@@ -51,24 +66,36 @@ ui <- fluidPage(
                         choices = 2023),
             selectInput("input_year_weather",
                         "Year of weather:",
-                        choices = 2015)
+                        choices = 2015),
             # selectInput("input_model",
             #             "Model:",
             #             c(BeetGRO = 1,
             #               Other1 = 2,
             #               Other2 = 3)
             #             ),
+            
+            # logout button
+            # shinyauthr::logoutUI(id = "logout")
 
         ),
 
         # Show a plot of the generated distribution
         mainPanel(
           tabsetPanel(
-            tabPanel("Overview",tableOutput("overview_tab")),
+            tabPanel("Overview",
+                     h3("FIELD SUMMARY"),
+                     tableOutput("overview_tab"),
+                     hr(),
+                     h3("DATES SUMMARY"),
+                     tableOutput("overview_tab2"),
+                     hr(),
+                     h3("YIELD SUMMARY"),
+                     tableOutput("yield_sum_tab")
+                     ),
             tabPanel("Graphs",
-                     selectInput("input_variable1","Variable",choices = mod_vars), 
+                     selectInput("input_variable1","Variable",choices = mod_vars, selected = "Soil Moisture Deficit"), 
                      plotlyOutput("graph1"),
-                     selectInput("input_variable2","Variable",choices = mod_vars), 
+                     selectInput("input_variable2","Variable",choices = mod_vars, selected = "Canopy Cover"), 
                      plotlyOutput("graph2")),
             tabPanel("Table",tableOutput("results_tab"))
            )
@@ -79,40 +106,83 @@ ui <- fluidPage(
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
   
+  # credentials <- shinyauthr::loginServer(
+  #   id = "login",
+  #   data = user_base,
+  #   user_col = user,
+  #   pwd_col = password,
+  #   sodium_hashed = TRUE,
+  #   log_out = reactive(logout_init())
+  # )
+  # 
+  # # Logout to hide
+  # logout_init <- shinyauthr::logoutServer(
+  #   id = "logout",
+  #   active = reactive(credentials()$user_auth)
+  # )
+  
   ##################################
   # USER INTERFACE UPDATING
   
   # UPDATE INPUTS
-    observe({
-      updateSelectInput(session, "input_year_trial", choices = unique(trial$year[which(trial$user==input$input_user)]))
-    })
+  observe({
+    updateSelectInput(session, "input_year_trial", choices = unique(trial$year[which(trial$user_text==input$input_user)]))
+  })
+  
+  observe({
+    updateSelectInput(session, "input_year_weather", choices = unique(trial$year[which(trial$user_text==input$input_user)]), selected = input$input_year_trial)
+  })
 
   ##################################
   # TABLES
+  
+  # REACTIVE VALUES
+  values <- reactiveValues()
   
   # OVERVIEW TABLE
   overview_tab <- reactive({
     user_s <- input$input_user
     year_s <- input$input_year_trial
     
-    old_names <- c("user","year","siteText","elevation","latitude","soil_b")
+    old_names <- c("user_text","year","field","elevation","latitude","soil_b")
     new_names <- c("User", "Year", "Field", "Elevation", "Latitude", "Soil b")
     
-    trial_i <- trial %>% 
-      filter(user == user_s & year == year_s) %>% 
-      select(c("user","year","siteText","elevation","latitude","soil_b")) %>% 
+    trial_overview <- trial %>% 
+      filter(user_text == user_s & year == year_s) %>% 
+      select(c("user_text","year","field","elevation","latitude","soil_b")) %>% 
       mutate(year = as.character(year)) %>% 
       rename_at(vars(all_of(old_names)), ~ new_names)
     
-    trial_i
+    trial_overview
+  })
+  
+  # OVERVIEW TABLE 2
+  overview_tab2 <- reactive({
+    user_s <- input$input_user
+    year_s <- input$input_year_trial
+    
+    old_names <- c("date_sow", "date_emerg", "date_harvest")
+    new_names <- c("Sowing date", "Emergence date", "Harvest date")
+    
+    trial_overview <- trial %>% 
+      filter(user_text == user_s & year == year_s) %>% 
+      select(c("date_sow", "date_emerg", "date_harvest")) %>%
+      mutate(date_sow = format(as.Date(date_sow, origin = '1970-01-01')),
+             date_emerg = format(as.Date(date_emerg, origin = '1970-01-01')),
+             date_harvest = format(as.Date(date_harvest, origin = '1970-01-01'))) %>% 
+      rename_at(vars(all_of(old_names)), ~ new_names)
+    
+    trial_overview
   })
   
   # CALCULATE MODEL
   BeetGRO_tab <- reactive({
       user_s <- input$input_user
       year_s <- input$input_year_trial
+      year_weather_s <- input$input_year_weather
       trial_i <- trial %>% 
-        filter(user == user_s & year == year_s)
+        filter(user_text == user_s & year == year_s)
+      weather_source <- unlist(trial_i["weather_source_info"])
       
       soil_b <- ifelse(trial_i$soil_b < 1, 2.1, trial_i$soil_b)
       pop1 <- ifelse(trial_i$pop1 < 90000, -0.0003*(trial_i$pop1/1000)^2+0.0456*(trial_i$pop1/1000)-1.0246, 1)
@@ -151,19 +221,28 @@ server <- function(input, output, session) {
       # TABLE OF EACH PARAMETER FOR EACH DAY OF YEAR FOR TRIAL "i".
 
       date_sow <- date(as.POSIXct(unlist(trial_i["date_sow"]), origin = '1970-01-01'))
-      date_emerg <- date(as.POSIXct(unlist(trial[i,"date_emerg"]), origin = '1970-01-01'))
-      date_harvest <- date(as.POSIXct(unlist(trial[i,"date_harvest"]), origin = '1970-01-01'))
+      date_emerg <- date(as.POSIXct(unlist(trial_i["date_emerg"]), origin = '1970-01-01'))
+      date_harvest <- date(as.POSIXct(unlist(trial_i["date_harvest"]), origin = '1970-01-01'))
       doy_sow <- yday(date_sow)
-      doy_sow <<- yday(date_sow)
       doy_emerg <- yday(date_emerg)
-      doy_emerg <<- yday(date_emerg)
       doy_harvest <- yday(date_harvest)
-      doy_harvest <<- yday(date_harvest)
+      
+      values$date_sow <- date_sow
+      values$date_emerg <- date_emerg
+      values$date_harvest <- date_harvest
+      values$doy_sow <- doy_sow
+      values$doy_emerg <- doy_emerg
+      values$doy_harvest <- doy_harvest
 
+      doy_adjust <- (as.numeric(year_s)-1970)*365+floor((as.numeric(year_s)-1970)*0.25)-1
+      
       BG_i <- weath %>%
-        select(doy, temp_x, precip, radiation_solar, evap
-        ) %>%
+        filter(year == year_weather_s & weath_id == weather_source) %>% 
+        select(doy, temp_x, precip, radiation_solar, evap) %>%
 
+        # Date (The 16435 is to convert from 2015-01-01 to 1970-01-01: THIS WILL NEED TO BE YEAR SPECIFIC)
+        mutate(date = as.Date(doy + doy_adjust, origin = "1970-01-01")) %>% 
+        
         # Crop status
         mutate(bbch = 00,
                bbch = replace(bbch, doy >= doy_sow, 01),
@@ -193,14 +272,16 @@ server <- function(input, output, session) {
       # GOING ROW WISE(). BUT THE PROBLEM IS THAT YOU CAN'T LAG IN DPLYR::ROWWISE(), SO HAVE TO GO TO LOOP
       for(j in 1:(doy_sow-1)){
         BG_ij <- BG_i[j,] %>%
-          mutate(soil_md = 20,
-                 soil_md_0 = 20,
+          mutate(soil_md = 0,
+                 soil_md_0 = 0,
                  soil_qrel = 1,
                  canopy_cover = param$fZero,
                  temp_s_cd = 0,
                  evap_soil = 0,
+                 evap_actual = 0,
                  yield_biom = 0,
-                 yield_root = 0)
+                 yield_root = 0,
+                 yield_sugar = 0)
 
         if(j==1) BG_j <- BG_ij
         if(j!=1) BG_j <- bind_rows(BG_j, BG_ij)
@@ -282,31 +363,71 @@ server <- function(input, output, session) {
       BG_i$id <- trial_i$id*1000+BG_i$doy
       
       BG_i
-      
     })
+  
+  BeetGRO_tab_display <- reactive({
+    old_names <- c("date", "temp_x", "precip","canopy_cover", "yield_biom", "yield_root", "yield_sugar", "soil_md", "evap_actual")
+    new_names <- c("Date", "Mean Temp", "Precipitation", "Canopy cover", "Yield - Biomass", "Yield - Root", "Yield - Sugar", "Soil Moisture Deficit", "Evapotranspiration")
+    
+    BG_i_display <- BeetGRO_tab() %>% 
+      filter(doy > 73) %>% 
+      select(date, temp_x, precip, canopy_cover, yield_biom, yield_root, yield_sugar, soil_md, evap_actual) %>% 
+      mutate(date = format(date)) %>% 
+      rename_at(vars(all_of(old_names)), ~ new_names)
+  
+    BG_i_display
+  })
+  
+  
+  BeetGRO_yield_tab <- reactive({
+    doy_harvest_s <- values$doy_harvest
+    doy_jun1 <- 152
+    doy_jul1 <- 182
+    doy_aug1 <- 213
+    doy_sep1 <- 244
+    doy_oct1 <- 274
+    doy_nov1 <- 305
+    doy_dec1 <- 335
+    doys <- c(doy_harvest_s, doy_jun1, doy_jul1, doy_aug1, doy_sep1, doy_oct1, doy_nov1, doy_dec1)
+    #doys <- if(doy_harvest %in% doys) doys else c(doy_harvest_s, doys)
+    
+    old_names <- c("date", "canopy_cover", "yield_biom", "yield_root", "yield_sugar")
+    new_names <- c("Date", "Canopy cover", "Yield - Biomass", "Yield - Root", "Yield - Sugar")
+    
+    BeetGRO_yield_tab <- BeetGRO_tab() %>%
+      filter(doy %in% doys) %>%
+      mutate(date = format(as.Date(doy, origin = "2015-01-01")-1, "%m-%d")) %>% 
+      select(date, canopy_cover, yield_biom, yield_root, yield_sugar) %>% 
+      rename_at(vars(all_of(old_names)), ~ new_names)
+      
+  })
+  
+  # THERE IS AN ERROR ABOUT "IF: ARGUMEENT IS OF LENGTH ZERO" WHEN THIS SUMMARY TABLE IS INCLUDED. NOT SURE WHY.
   
   ##################################
   # GRAPH
   graph1_gg <- reactive({
-    y_s <- input$input_variable1
+    y_s <- mod_vars_[which(mod_vars == input$input_variable1)]
     
-    ggplot(BeetGRO_tab(), aes(x=doy)) + 
+    ggplot(BeetGRO_tab(), aes(x=date)) + 
       geom_line(aes_string(y = y_s), size = 1) +
-      xlab("Day of year") + 
-      geom_vline(xintercept = doy_sow) + 
-      geom_vline(xintercept = doy_emerg) +
-      geom_vline(xintercept = doy_harvest)
+      xlab("Date") + 
+      geom_vline(xintercept = as.numeric(values$date_sow)) + 
+      geom_vline(xintercept = as.numeric(values$date_emerg)) +
+      geom_vline(xintercept = as.numeric(values$date_harvest)) +
+      theme(axis.title.y=element_blank())
   })
   
   graph2_gg <- reactive({
-    y_s <- input$input_variable2
+    y_s <- mod_vars_[which(mod_vars == input$input_variable2)]
     
-    ggplot(BeetGRO_tab(), aes(x=doy)) + 
+    ggplot(BeetGRO_tab(), aes(x=date)) + 
       geom_line(aes_string(y = y_s), size = 1) +
-      xlab("Day of year") + 
-      geom_vline(xintercept = doy_sow) + 
-      geom_vline(xintercept = doy_emerg) +
-      geom_vline(xintercept = doy_harvest)
+      xlab("Date") + 
+      geom_vline(xintercept = as.numeric(values$date_sow)) + 
+      geom_vline(xintercept = as.numeric(values$date_emerg)) +
+      geom_vline(xintercept = as.numeric(values$date_harvest)) +
+      theme(axis.title.y=element_blank())
   })
   
   ##################################
@@ -316,10 +437,18 @@ server <- function(input, output, session) {
     overview_tab()
   )
   
-  output$results_tab <- renderTable(
-    BeetGRO_tab()
+  output$overview_tab2 <- renderTable(
+    overview_tab2()
   )
   
+  output$results_tab <- renderTable(
+    BeetGRO_tab_display()
+  )
+  
+  output$yield_sum_tab <- renderTable(
+    BeetGRO_yield_tab()
+  )
+
   output$graph1 <- plotly::renderPlotly({
     graph1_gg()
   })

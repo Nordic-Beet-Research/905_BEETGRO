@@ -157,6 +157,9 @@ BG_i <- weath %>%
   select(doy, temp_x, precip, radiation_solar, evap
          ) %>%
 
+  #Date
+  mutate(date = as.Date(doy + 16435, origin = "1970-01-01")) %>% 
+  
 # Crop status
   mutate(bbch = 00,
          bbch = replace(bbch, doy >= doy_sow, 01),
