@@ -25,15 +25,15 @@ library(shinyauthr)
 # trial <- read_xlsx("./905_NBYC_Shiny_local/www/TrialData.xlsx", sheet = "TrialData") 
 # users <- unique(trial$user)
 # weath <- read_xlsx("./905_NBYC_Shiny_local/www/Site001.xlsx", sheet = "Sheet1")
-# mod_vars <- c("evap_actual","soil_md","canopy_cover","yield_root","yield_sugar","yield_biom")
+# mod_vars <- c("evap_actual","soil_md","canopy_cover","yield_sugar","yield_s_pct_dm","yield_biom")
 
 # RunApp DATA
 param <- pivot_wider(read_xlsx("./www/parameters.xlsx", sheet = "parameters"), names_from = parameter)
 trial <- read_xlsx("./www/TrialData.xlsx", sheet = "TrialData")
 users <- unique(trial$user_text)
 weath <- read_xlsx("./www/Site001.xlsx", sheet = "Sheet1")
-mod_vars <- c("Soil Moisture Deficit", "Precipitation","Evapotranspiration", "Canopy Cover", "Yield - Root", "Yield - Sugar", "Yield - Biomass")
-mod_vars_ <- c("soil_md","precip","evap_actual","canopy_cover","yield_root","yield_sugar","yield_biom")
+mod_vars <- c("Temp., Mean","Precipitation", "Canopy Cover", "Root Depth", "Evapotranspiration", "Soil Moisture Deficit", "Yield - Biomass", "Yield - Sugar", "Sugar % DM")
+mod_vars_ <- c("temp_x","precip", "canopy_cover", "root_depth", "evap_actual", "soil_md", "yield_biom", "yield_sugar","yield_s_pct_dm")
 
 
 # LOGIN DETAILS
@@ -63,7 +63,7 @@ ui <- fluidPage(
                         ),
             selectInput("input_year_trial",
                         "Year of trial:",
-                        choices = 2023),
+                        choices = 2015),
             selectInput("input_year_weather",
                         "Year of weather:",
                         choices = 2015),
@@ -86,7 +86,7 @@ ui <- fluidPage(
                      h3("FIELD SUMMARY"),
                      tableOutput("overview_tab"),
                      hr(),
-                     h3("DATES SUMMARY"),
+                     h3("MODEL INPUTS SUMMARY"),
                      tableOutput("overview_tab2"),
                      hr(),
                      h3("YIELD SUMMARY"),
@@ -145,7 +145,7 @@ server <- function(input, output, session) {
     year_s <- input$input_year_trial
     
     old_names <- c("user_text","year","field","elevation","latitude","soil_b")
-    new_names <- c("User", "Year", "Field", "Elevation", "Latitude", "Soil b")
+    new_names <- c("Grower", "Year", "Field", "Elevation", "Latitude", "Soil b")
     
     trial_overview <- trial %>% 
       filter(user_text == user_s & year == year_s) %>% 
@@ -280,8 +280,9 @@ server <- function(input, output, session) {
                  evap_soil = 0,
                  evap_actual = 0,
                  yield_biom = 0,
-                 yield_root = 0,
-                 yield_sugar = 0)
+                 yield_sugar = 0,
+                 yield_s_pct_dm = 0,
+                 root_depth = 0)
 
         if(j==1) BG_j <- BG_ij
         if(j!=1) BG_j <- bind_rows(BG_j, BG_ij)
@@ -296,7 +297,7 @@ server <- function(input, output, session) {
             evap_soil = BG_j$evap_soil[j-1],
             yield_biom = BG_j$yield_biom[j-1],
             radiation_solar = replace(radiation_solar, radiation_solar < 0, 0),
-            yield_root = BG_j$yield_root[j-1],
+            yield_sugar = BG_j$yield_sugar[j-1],
 
             # CANOPY (canopy_cover)
             stress_water = ifelse(soil_qrel < trial_i$stress_wB & temp_b_cd_em > trial_i$stress_wC, (soil_qrel/trial_i$stress_wB)^trial_i$stress_wC, 1),
@@ -344,9 +345,9 @@ server <- function(input, output, session) {
             # YIELDS
             yield_biom_d = rue*canopy_cover*radiation_solar, #There is a calculation for radiation in OpenModel, if radiation_solar is negative.
             yield_biom = yield_biom + yield_biom_d,
-            yield_root = (yield_root + yield_biom_d*(trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom))),
-            yield_sugar = (trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom)),
-            yield_pop = pop_loss*yield_root
+            yield_sugar = (yield_sugar + yield_biom_d*(trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom))),
+            yield_s_pct_dm = (trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom)),
+            yield_pop = pop_loss*yield_sugar
           )
 
         BG_j <- bind_rows(BG_j, BG_ij)
@@ -362,16 +363,22 @@ server <- function(input, output, session) {
       BG_i$trial_id <- trial_i$id        # Add trial_id back in to use for presentation of data.
       BG_i$id <- trial_i$id*1000+BG_i$doy
       
+      # FIXING UNITS
+      BG_i <- BG_i %>%
+        mutate(yield_biom = yield_biom / 100,
+               yield_sugar = yield_sugar / 100,
+               yield_s_pct_dm = yield_s_pct_dm * 100)
+      
       BG_i
     })
   
   BeetGRO_tab_display <- reactive({
-    old_names <- c("date", "temp_x", "precip","canopy_cover", "yield_biom", "yield_root", "yield_sugar", "soil_md", "evap_actual")
-    new_names <- c("Date", "Mean Temp", "Precipitation", "Canopy cover", "Yield - Biomass", "Yield - Root", "Yield - Sugar", "Soil Moisture Deficit", "Evapotranspiration")
+    old_names <- c("date", "temp_x", "precip","canopy_cover", "root_depth", "evap_actual", "soil_md", "yield_biom", "yield_sugar", "yield_s_pct_dm")
+    new_names <- c("Date", "Mean Temp", "Precipitation", "Canopy cover", "Root Depth", "Evapotranspiration", "Soil Moisture Deficit", "Yield - Biomass", "Yield - Sugar", "Sugar % DM")
     
     BG_i_display <- BeetGRO_tab() %>% 
       filter(doy > 73) %>% 
-      select(date, temp_x, precip, canopy_cover, yield_biom, yield_root, yield_sugar, soil_md, evap_actual) %>% 
+      select(date, temp_x, precip, canopy_cover, root_depth, evap_actual, soil_md, yield_biom, yield_sugar, yield_s_pct_dm) %>% 
       mutate(date = format(date)) %>% 
       rename_at(vars(all_of(old_names)), ~ new_names)
   
@@ -391,13 +398,13 @@ server <- function(input, output, session) {
     doys <- c(doy_harvest_s, doy_jun1, doy_jul1, doy_aug1, doy_sep1, doy_oct1, doy_nov1, doy_dec1)
     #doys <- if(doy_harvest %in% doys) doys else c(doy_harvest_s, doys)
     
-    old_names <- c("date", "canopy_cover", "yield_biom", "yield_root", "yield_sugar")
-    new_names <- c("Date", "Canopy cover", "Yield - Biomass", "Yield - Root", "Yield - Sugar")
+    old_names <- c("date", "canopy_cover", "yield_biom", "yield_sugar", "yield_s_pct_dm")
+    new_names <- c("Date", "Canopy cover", "Yield - Biomass", "Yield - Sugar", "Sugar - % DM")
     
     BeetGRO_yield_tab <- BeetGRO_tab() %>%
       filter(doy %in% doys) %>%
       mutate(date = format(as.Date(doy, origin = "2015-01-01")-1, "%m-%d")) %>% 
-      select(date, canopy_cover, yield_biom, yield_root, yield_sugar) %>% 
+      select(date, canopy_cover, yield_biom, yield_sugar, yield_s_pct_dm) %>% 
       rename_at(vars(all_of(old_names)), ~ new_names)
       
   })

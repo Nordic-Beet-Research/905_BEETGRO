@@ -5,9 +5,10 @@ account: nordicbeet
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 8990496
-bundleId: 7153999
+bundleId: 7154331
 url: https://nordicbeet.shinyapps.io/905_NBYC/
-when: 1682798722.55573
-lastSyncTime: 1682798722.55573
+when: 1682809399.05165
+lastSyncTime: 1682809399.05165
 asMultiple: FALSE
 asStatic: FALSE
+ignoredFiles: www/Site001_2015.xlsx

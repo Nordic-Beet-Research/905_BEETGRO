@@ -189,14 +189,14 @@ BG_i <- weath %>%
 # GOING ROW WISE(). BUT THE PROBLEM IS THAT YOU CAN'T LAG IN DPLYR::ROWWISE(), SO HAVE TO GO TO LOOP
 for(j in 1:(doy_sow-1)){
   BG_ij <- BG_i[j,] %>%
-    mutate(soil_md = 20,
-           soil_md_0 = 20,
+    mutate(soil_md = 0,
+           soil_md_0 = 0,
            soil_qrel = 1,
            canopy_cover = param$fZero,
            temp_s_cd = 0,
            evap_soil = 0,
            yield_biom = 0,
-           yield_root = 0)
+           yield_sugar = 0)
   
   if(j==1) BG_j <- BG_ij
   if(j!=1) BG_j <- bind_rows(BG_j, BG_ij)
@@ -211,7 +211,7 @@ for(j in doy_sow:nrow(BG_i)){
       evap_soil = BG_j$evap_soil[j-1],
       yield_biom = BG_j$yield_biom[j-1],
       radiation_solar = replace(radiation_solar, radiation_solar < 0, 0),
-      yield_root = BG_j$yield_root[j-1],
+      yield_sugar = BG_j$yield_sugar[j-1],
       
       # CANOPY (canopy_cover)
       stress_water = ifelse(soil_qrel < trial_i$stress_wB & temp_b_cd_em > trial_i$stress_wC, (soil_qrel/trial_i$stress_wB)^trial_i$stress_wC, 1),
@@ -259,9 +259,9 @@ for(j in doy_sow:nrow(BG_i)){
       # YIELDS
       yield_biom_d = rue*canopy_cover*radiation_solar, #There is a calculation for radiation in OpenModel, if radiation_solar is negative.
       yield_biom = yield_biom + yield_biom_d,
-      yield_root = (yield_root + yield_biom_d*(trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom))),
-      yield_sugar = (trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom)),
-      yield_pop = pop_loss*yield_root
+      yield_sugar = (yield_sugar + yield_biom_d*(trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom))),
+      yield_s_pct_dm = (trial_i$kappa*yield_biom/(1+trial_i$kappa*yield_biom)),
+      yield_pop = pop_loss*yield_sugar
       )
   
   BG_j <- bind_rows(BG_j, BG_ij)
