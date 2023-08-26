@@ -1,71 +1,39 @@
 ############################################
 ############################################
 ##
-## Building an NBR Beet Growth Model
+## Weather data for the NBYC growth model. This is a bit of a mess...
 ##
-## v1.0 - Getting ET, putting that in the BBRO model, and getting through to Vintermötet2022
+## v1.1 - Getting data from Lantmet daily, 
+## # Requires a local DropBox connection
+## # sources information on trials from Dropbox .../80. Projects/905 NBYC/Data/2023/ for the live 2023 data
+## # writes data back to the same DropBox folder
+## # used in discussions around the model in 2023
 ##
-## This project uses R 4.1.2 
-## with snapshot date 2021-11-01
+## This project uses R 4.3.1 
+## with snapshot date 2023-08-01
 ##
 ############################################
 ############################################
 
 # Setup
-
-{
-  # -------------------------------------------
-  snapshot_date = "2021-11-01"
-  options("repos" = paste0("https://mran.revolutionanalytics.com/snapshot/", snapshot_date))
-  # -------------------------------------------
-  
-  # -------------------------------------------
-  # sink options
-  options(width = 150)
-  # rJava memory option
-  options(java.parameters = "-Xmx8000m")
-  # -------------------------------------------
-  
-  # R packages
-  # -------------------------------------------
-  Rpackages_version = c(
-    "data.table_1.14.2",
-    "ggplot2_3.3.5",
-    "dplyr_1.0.7",
-    "writexl_1.4.0",
-    "lubridate_1.8.0",
-    "readxl_1.3.1"
-  )
-  
-  path_Rpackages = "C:/R packages_412"
-  # -------------------------------------------
-  
-  # version check and load packages
-  # -------------------------------------------
-  # R version check
-  if(sessionInfo()$R.version$version.string != "R version 4.1.2 (2021-11-01)") stop("R.version must be 4.1.2 (2021-11-01)")
-  
-  # install packages
-  Rpack = sapply(strsplit(Rpackages_version, "_", fixed = T), FUN = function(x) x[1])
-  Rpack_version = sapply(strsplit(Rpackages_version, "_", fixed = T), FUN = function(x) x[2])
-  if(!all(Rpack %in% list.files(path_Rpackages))){
-    loadRpackages <- Rpack[!Rpack %in% list.files(path_Rpackages)]
-    for(i in loadRpackages) install.packages(i, lib = path_Rpackages, repos = options("repos"), dependencies = T)
-  }
-  
-  # load packages
-  for(i in Rpack) eval(parse(text = paste0("library(", i, ", lib.loc = '", path_Rpackages, "')")))
-  
-  rm(list = ls())
+# SETUP HAS BEEN SIMPLIFIED BECAUSE OF THE PROBLEM OF THE DEPRECIATED/ CLOSED MRAN REPOSITORY. 
+# FOR NOW, JUST USING LIBRARY
+{  
+  library(data.table)
+  library(ggplot2)
+  library(dplyr)
+  library(writexl)
+  library(lubridate)
+  library(readxl)
 }
 
 ############################################
 # IMPORT TRIALDATA AND EXTRACT WEATHER DATA SOURCES
 ## Read in trial data
-trial <- read_xlsx("TrialData.xlsx", sheet = "TrialData")
-param <- pivot_wider(read_xlsx("parameters.xlsx", sheet = "parameters"), names_from = parameter)
+trial <- read_xlsx("C:/Users/we/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/TrialData.xlsx", sheet = "TrialData")
+param <- pivot_wider(read_xlsx("C:/Users/we/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/parameters.xlsx", sheet = "parameters"), names_from = parameter)
 
-i=1L
+i=8L
 
 for(i in 1:nrow(trial)){
   trial_i <- trial[i,]
@@ -108,7 +76,9 @@ for(i in 1:nrow(trial)){
       select(!c("HOUR","WSTNID")) %>% 
       rename_at(vars(all_of(names_old)), ~ names_new) %>% 
       mutate(doy = yday(date),
-             vh_x = replace(vh_x, vh_x == "NA", 2))
+             vh_x = replace(vh_x, vh_x == "NA", 2),
+             year = trial_i$year,
+             SiteID = trial_i$weather_source_info)
     
     wind_height <- 2 # height above ground at which wind is measured
     Albedo <- param$Albedo
@@ -140,7 +110,7 @@ for(i in 1:nrow(trial)){
   ############################################
   # CALCULATE ET, AND THE STEPS ALONG THE WAY
   
-  dat_weather_i_full <- dat_weather_i_full %>% 
+  dat_weather_i_full <- dat_weather_i %>% 
     mutate(
       # WIND SPEED AT GROUND LEVEL
       wind_ground = vh_x * 4.87/log(67.8*wind_height-5.42),
@@ -206,9 +176,9 @@ for(i in 1:nrow(trial)){
   
   ############################################
   # WRITE EXCEL
-  
-  write_xlsx(dat_weather_i_abbrev, paste0("./weather/Site",sprintf("%03d", trial_i$SiteID),"_",trial_i$Year,".xlsx"))
-  write_xlsx(dat_weather_i_full, paste0("./weather/Site",sprintf("%03d", trial_i$SiteID),"_",trial_i$Year,"_full.xlsx"))
+
+  write_xlsx(dat_weather_i_abbrev, paste0("./weather/Site_",sprintf("%03d", trial_i$user),"_",trial_i$year,".xlsx"))
+  write_xlsx(dat_weather_i_full, paste0("./weather/Site_",sprintf("%03d", trial_i$user),"_",trial_i$year,"_full.xlsx"))
 
 }
 

@@ -3,10 +3,10 @@
 ##
 ## BBRO BEETGRO MODEL - TO A SHINY SERVER
 ##
-## v2023-08-24. With connection to files on DropBox (remote) rather than local
+## v2023-04-24. First attempt. Goal is to have something that work for 905 NBYC
 ##
-## This project uses R 4.3.1 
-## with snapshot date 2023-08-01
+## This project uses R 4.1.2 
+## with snapshot date 2021-11-01
 ##
 ############################################
 ############################################
@@ -27,36 +27,13 @@ library(shinyauthr)
 # weath <- read_xlsx("./905_NBYC_Shiny_local/www/Site001.xlsx", sheet = "Sheet1")
 # mod_vars <- c("evap_actual","soil_md","canopy_cover","yield_sugar","yield_s_pct_dm","yield_biom")
 
-# Authenticate access to DropBox (one-time access)
-# token <- drop_auth()
-# saveRDS(token, "./905_NBYC_Shiny_local/www/token.RDS") # Add to .gitignore
-
-# RunApp DATA (FROM DROPBOX)
-tmpfile_param <- tempfile(fileext='.xlsx')
-tmpfile_trial <- tempfile(fileext='.xlsx')
-tmpfile_weath <- tempfile(fileext='.xlsx')
-
-# these need to have dl=1 at the end.
-download.file(url = "https://www.dropbox.com/scl/fi/t4xsc93z5kauzes8iolht/parameters.xlsx?rlkey=yn11yw3st3qfkfzvh8szv1unu&dl=1", destfile = tmpfile_param, mode="wb")
-download.file(url = "https://www.dropbox.com/scl/fi/8sfhr91qr4k2skg863hd2/TrialData.xlsx?rlkey=koydgvgdrdjhhn3raf66x1p00&dl=1", destfile = tmpfile_trial, mode="wb")
-download.file(url = "https://www.dropbox.com/scl/fi/ne2w2kv296sirctfv1v8h/NBYCweather.xlsx?rlkey=wwmy3amshmfiuswkvt7lhow1k&dl=1", destfile = tmpfile_weath, mode="wb")
-
-param <- pivot_wider(read_xlsx(tmpfile_param, sheet = "parameters"), names_from = parameter)
-trial <- read_xlsx(tmpfile_trial, sheet = "TrialData")
+# RunApp DATA
+param <- pivot_wider(read_xlsx("./www/parameters.xlsx", sheet = "parameters"), names_from = parameter)
+trial <- read_xlsx("./www/TrialData.xlsx", sheet = "TrialData")
 users <- unique(trial$user_text)
-weath <- read_xlsx(tmpfile_weath, sheet = "Sheet1")
-
+weath <- read_xlsx("./www/Site001.xlsx", sheet = "Sheet1")
 mod_vars <- c("Temp., Mean","Precipitation", "Canopy Cover", "Root Depth", "Evapotranspiration", "Soil Moisture Deficit", "Yield - Biomass", "Yield - Sugar", "Sugar % DM")
 mod_vars_ <- c("temp_x","precip", "canopy_cover", "root_depth", "evap_actual", "soil_md", "yield_biom", "yield_sugar","yield_s_pct_dm")
-
-
-# # RunApp DATA (FROM LOCAL)
-# param <- pivot_wider(read_xlsx("./www/parameters.xlsx", sheet = "parameters"), names_from = parameter)
-# trial <- read_xlsx("./www/TrialData.xlsx", sheet = "TrialData")
-# users <- unique(trial$user_text)
-# weath <- read_xlsx("./www/Site001.xlsx", sheet = "Sheet1")
-# mod_vars <- c("Temp., Mean","Precipitation", "Canopy Cover", "Root Depth", "Evapotranspiration", "Soil Moisture Deficit", "Yield - Biomass", "Yield - Sugar", "Sugar % DM")
-# mod_vars_ <- c("temp_x","precip", "canopy_cover", "root_depth", "evap_actual", "soil_md", "yield_biom", "yield_sugar","yield_s_pct_dm")
 
 
 # LOGIN DETAILS
@@ -86,11 +63,10 @@ ui <- fluidPage(
                         ),
             selectInput("input_year_trial",
                         "Year of trial:",
-                        choices = 2023),
+                        choices = 2015),
             selectInput("input_year_weather",
                         "Year of weather:",
-                        choices = 2023),
-            checkboxInput("input_forecast", "Forecast current year?", value = FALSE),
+                        choices = 2015),
             # selectInput("input_model",
             #             "Model:",
             #             c(BeetGRO = 1,
@@ -150,7 +126,7 @@ server <- function(input, output, session) {
   
   # UPDATE INPUTS
   observe({
-    updateSelectInput(session, "input_year_trial", choices = sort(unique(trial$year[which(trial$user_text==input$input_user)]), decreasing = T))
+    updateSelectInput(session, "input_year_trial", choices = unique(trial$year[which(trial$user_text==input$input_user)]))
   })
   
   observe({
@@ -260,15 +236,11 @@ server <- function(input, output, session) {
 
       doy_adjust <- (as.numeric(year_s)-1970)*365+floor((as.numeric(year_s)-1970)*0.25)-1
       
-      # Bring in historical data for forecast  
-      if(input$input_forecast) {weath <- weath %>% 
-        mutate(year = replace(year, year == 1522 & doy >= yday(today()), 2023))}
-      
       BG_i <- weath %>%
         filter(year == year_weather_s & weath_id == weather_source) %>% 
         select(doy, temp_x, precip, radiation_solar, evap) %>%
 
-        # Date
+        # Date (The 16435 is to convert from 2015-01-01 to 1970-01-01: THIS WILL NEED TO BE YEAR SPECIFIC)
         mutate(date = as.Date(doy + doy_adjust, origin = "1970-01-01")) %>% 
         
         # Crop status
@@ -416,7 +388,6 @@ server <- function(input, output, session) {
   
   BeetGRO_yield_tab <- reactive({
     doy_harvest_s <- values$doy_harvest
-    doy_today <- yday(today()-1)
     doy_jun1 <- 152
     doy_jul1 <- 182
     doy_aug1 <- 213
@@ -424,7 +395,7 @@ server <- function(input, output, session) {
     doy_oct1 <- 274
     doy_nov1 <- 305
     doy_dec1 <- 335
-    doys <- c(doy_harvest_s, doy_today, doy_jun1, doy_jul1, doy_aug1, doy_sep1, doy_oct1, doy_nov1, doy_dec1)
+    doys <- c(doy_harvest_s, doy_jun1, doy_jul1, doy_aug1, doy_sep1, doy_oct1, doy_nov1, doy_dec1)
     #doys <- if(doy_harvest %in% doys) doys else c(doy_harvest_s, doys)
     
     old_names <- c("date", "canopy_cover", "yield_biom", "yield_sugar", "yield_s_pct_dm")
@@ -446,7 +417,7 @@ server <- function(input, output, session) {
     y_s <- mod_vars_[which(mod_vars == input$input_variable1)]
     
     ggplot(BeetGRO_tab(), aes(x=date)) + 
-      geom_line(aes_string(y = y_s), linewidth = 1) +
+      geom_line(aes_string(y = y_s), size = 1) +
       xlab("Date") + 
       geom_vline(xintercept = as.numeric(values$date_sow)) + 
       geom_vline(xintercept = as.numeric(values$date_emerg)) +
@@ -458,7 +429,7 @@ server <- function(input, output, session) {
     y_s <- mod_vars_[which(mod_vars == input$input_variable2)]
     
     ggplot(BeetGRO_tab(), aes(x=date)) + 
-      geom_line(aes_string(y = y_s), linewidth = 1) +
+      geom_line(aes_string(y = y_s), size = 1) +
       xlab("Date") + 
       geom_vline(xintercept = as.numeric(values$date_sow)) + 
       geom_vline(xintercept = as.numeric(values$date_emerg)) +
