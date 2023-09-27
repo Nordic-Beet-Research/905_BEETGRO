@@ -25,14 +25,19 @@
   library(writexl)
   library(lubridate)
   library(readxl)
+  library(tidyr)
 }
+
+if(Sys.info()['sysname'] == "Linux") root_dir <- "/home/nbrworkstation"
+if(Sys.info()['sysname'] == "Windows") root_dir <- "C:/Users/we"
 
 ############################################
 # IMPORT TRIALDATA AND EXTRACT WEATHER DATA SOURCES
 ## Read in trial data
-trial <- read_xlsx("C:/Users/we/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/TrialData.xlsx", sheet = "TrialData")
-param <- pivot_wider(read_xlsx("C:/Users/we/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/parameters.xlsx", sheet = "parameters"), names_from = parameter)
-weath_hist <- read_xlsx("C:/Users/we/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/NBYCweather_hist.xlsx", sheet = "Sheet1")
+
+trial <- read_xlsx(paste0(root_dir,"/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/TrialData.xlsx"), sheet = "TrialData")
+param <- pivot_wider(read_xlsx(paste0(root_dir,"/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/parameters.xlsx"), sheet = "parameters"), names_from = parameter)
+weath_hist <- read_xlsx(paste0(root_dir,"/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/NBYCweather_hist.xlsx"), sheet = "Sheet1")
 
 # CREATE HISTORICAL AVERAGES BY STATION
 weath_hist_aves <- weath_hist %>% 
@@ -55,9 +60,7 @@ year_current <- 2023
 
 trial_current <- trial %>% 
   filter(year == year_current) %>% 
-  distinct(weather_source, .keep_all = T)
-
-i=1L
+  distinct(weather_source_info, .keep_all = T)
 
 weath_current <- data.frame(date = Date(), year = numeric(), weath_id = numeric(), doy = numeric(),
                             temp_x = numeric(), temp_l = numeric(), temp_h = numeric(), precip = numeric(),           
@@ -66,6 +69,8 @@ weath_current <- data.frame(date = Date(), year = numeric(), weath_id = numeric(
                             delta = numeric(), psi = numeric(),temp_t = numeric(), press_sat_h = numeric(), press_sat_l = numeric(),      
                             press_vapour = numeric(), sun_dist = numeric(),sun_decl = numeric(), sun_angle = numeric(), radiation_space = numeric(),  
                             radiation_global= numeric(), radiation_net = numeric(), radiation_LW = numeric(), radiation_balance = numeric(), evap = numeric())
+
+i=2L
 
 for(i in 1:nrow(trial_current)){
   trial_i <- trial_current[i,]
@@ -179,8 +184,7 @@ for(i in 1:nrow(trial_current)){
   # WRITE EXCEL
   
   # write_xlsx(dat_weather_i_abbrev, paste0("./weather/Site",sprintf("%03d", trial_i$SiteID),"_",trial_i$Year,".xlsx"))
-  write_xlsx(dat_weather_i, paste0("./weather/Site",sprintf("%03d", trial_i$user),"_",trial_i$year,"_full.xlsx"))
-
+  write_xlsx(dat_weather_i, paste0(root_dir,"/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023/weather/Site",sprintf("%03d", trial_i$user),"_",trial_i$year,"_full.xlsx"))
 }
 
 # JOIN ALL THE DATA TOGETHER
@@ -193,4 +197,4 @@ weather_current_abbrev <- weath_current %>%
 NBYCweath <- weath_hist %>% 
   bind_rows(weather_current_abbrev, weath_hist_aves)
 
-write_xlsx(NBYCweath, "C:/Users/we/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023//NBYCweather.xlsx")
+write_xlsx(NBYCweath, paste0(root_dir,"/Dropbox/NBR/80. Projects/905 Nordic Beet Yield Challenge NBYC/Data/2023//NBYCweather.xlsx"))

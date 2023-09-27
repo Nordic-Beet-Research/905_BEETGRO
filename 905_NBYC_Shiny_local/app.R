@@ -79,7 +79,8 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
-            selectInput("input_user",
+          h4("GROWER AND YEAR - INPUT DATA"),
+          selectInput("input_user",
                         "Grower:",
                         selected = "NBR",
                         choices = users
@@ -87,6 +88,12 @@ ui <- fluidPage(
             selectInput("input_year_trial",
                         "Year of trial:",
                         choices = 2023),
+            hr(),
+            h4("FIELD IN MODEL"),
+            selectInput("input_field",
+                        "Field:",
+                        choices = "field"
+                        ),
             selectInput("input_year_weather",
                         "Year of weather:",
                         choices = 2023),
@@ -107,13 +114,14 @@ ui <- fluidPage(
         mainPanel(
           tabsetPanel(
             tabPanel("Overview",
-                     h3("FIELD SUMMARY"),
+                     h3("FIELDS IN TRIAL YEAR"),
                      tableOutput("overview_tab"),
                      hr(),
-                     h3("MODEL INPUTS SUMMARY"),
+                     #h3("ESTIMATED EMERGENCE DATE"),
+                     #tableOutput("overview_tab2"),
+                     #hr(),
+                     h3("MODEL SUMMARY FOR FIELD"),
                      tableOutput("overview_tab2"),
-                     hr(),
-                     h3("YIELD SUMMARY"),
                      tableOutput("yield_sum_tab")
                      ),
             tabPanel("Graphs",
@@ -156,6 +164,10 @@ server <- function(input, output, session) {
   observe({
     updateSelectInput(session, "input_year_weather", choices = unique(trial$year[which(trial$user_text==input$input_user)]), selected = input$input_year_trial)
   })
+  
+  observe({
+    updateSelectInput(session, "input_field", choices = unique(trial$field[which(trial$user_text==input$input_user & trial$year == input$input_year_trial)]))
+  })
 
   ##################################
   # TABLES
@@ -168,13 +180,14 @@ server <- function(input, output, session) {
     user_s <- input$input_user
     year_s <- input$input_year_trial
     
-    old_names <- c("user_text","year","field","elevation","latitude","soil_b")
-    new_names <- c("Grower", "Year", "Field", "Elevation", "Latitude", "Soil b")
+    old_names <- c("user_text","year","field","elevation","latitude","soil_b","date_sow")
+    new_names <- c("Grower", "Year", "Field", "Elevation", "Latitude", "Soil b","Sowing date")
     
     trial_overview <- trial %>% 
       filter(user_text == user_s & year == year_s) %>% 
-      select(c("user_text","year","field","elevation","latitude","soil_b")) %>% 
-      mutate(year = as.character(year)) %>% 
+      select(c("user_text","year","field","elevation","latitude","soil_b","date_sow")) %>% 
+      mutate(year = as.character(year),
+             date_sow = format(as.Date(date_sow, origin = '1970-01-01'))) %>% 
       rename_at(vars(all_of(old_names)), ~ new_names)
     
     trial_overview
@@ -185,18 +198,30 @@ server <- function(input, output, session) {
     user_s <- input$input_user
     year_s <- input$input_year_trial
     
-    old_names <- c("date_sow", "date_emerg", "date_harvest")
-    new_names <- c("Sowing date", "Emergence date", "Harvest date")
+    old_names <- c("date_emerg")
+    new_names <- c("Emergence date")
     
-    trial_overview <- trial %>% 
-      filter(user_text == user_s & year == year_s) %>% 
-      select(c("date_sow", "date_emerg", "date_harvest")) %>%
-      mutate(date_sow = format(as.Date(date_sow, origin = '1970-01-01')),
-             date_emerg = format(as.Date(date_emerg, origin = '1970-01-01')),
-             date_harvest = format(as.Date(date_harvest, origin = '1970-01-01'))) %>% 
-      rename_at(vars(all_of(old_names)), ~ new_names)
+    trial_overview <- data.frame("Field" = input$input_field,
+                                 "Emergence date" = format(as.Date(values$date_emerg, origin = '1970-01-01')))
+    
+    # trial_overview <- trial %>% 
+    #   filter(user_text == user_s & year == year_s) %>% 
+    #   select(c("date_emerg")) %>%
+    #   mutate(date_emerg = format(as.Date(date_emerg, origin = '1970-01-01'))) %>% 
+    #   rename_at(vars(all_of(old_names)), ~ new_names)
     
     trial_overview
+  })
+  
+  # OVERVIEW TABLE 3
+  overview_tab3 <- reactive({
+    user_s <- input$input_user
+    year_s <- input$input_year_trial
+    
+    field_overview <- data.frame("Field" = input$input_field
+                                 )
+    
+    field_overview
   })
   
   # CALCULATE MODEL
@@ -204,8 +229,9 @@ server <- function(input, output, session) {
       user_s <- input$input_user
       year_s <- input$input_year_trial
       year_weather_s <- input$input_year_weather
+      field_s <- input$input_field
       trial_i <- trial %>% 
-        filter(user_text == user_s & year == year_s)
+        filter(user_text == user_s & year == year_s & field == field_s)
       weather_source <- unlist(trial_i["weather_source_info"])
       
       soil_b <- ifelse(trial_i$soil_b < 1, 2.1, trial_i$soil_b)
@@ -245,17 +271,17 @@ server <- function(input, output, session) {
       # TABLE OF EACH PARAMETER FOR EACH DAY OF YEAR FOR TRIAL "i".
 
       date_sow <- date(as.POSIXct(unlist(trial_i["date_sow"]), origin = '1970-01-01'))
-      date_emerg <- date(as.POSIXct(unlist(trial_i["date_emerg"]), origin = '1970-01-01'))
+      #date_emerg <- date(as.POSIXct(unlist(trial_i["date_emerg"]), origin = '1970-01-01'))
       date_harvest <- date(as.POSIXct(unlist(trial_i["date_harvest"]), origin = '1970-01-01'))
       doy_sow <- yday(date_sow)
-      doy_emerg <- yday(date_emerg)
+      #doy_emerg <- yday(date_emerg)
       doy_harvest <- yday(date_harvest)
       
       values$date_sow <- date_sow
-      values$date_emerg <- date_emerg
+      #values$date_emerg <- date_emerg
       values$date_harvest <- date_harvest
       values$doy_sow <- doy_sow
-      values$doy_emerg <- doy_emerg
+      #values$doy_emerg <- doy_emerg
       values$doy_harvest <- doy_harvest
 
       doy_adjust <- (as.numeric(year_s)-1970)*365+floor((as.numeric(year_s)-1970)*0.25)-1
@@ -274,7 +300,7 @@ server <- function(input, output, session) {
         # Crop status
         mutate(bbch = 00,
                bbch = replace(bbch, doy >= doy_sow, 01),
-               bbch = replace(bbch, doy >= doy_emerg, 09),
+               #bbch = replace(bbch, doy >= doy_emerg, 09),
                bbch = replace(bbch, doy >= doy_harvest, 99)
         ) %>%
 
@@ -287,8 +313,19 @@ server <- function(input, output, session) {
         group_by(sown = bbch >= 01) %>%
         mutate(
           temp_b_cd_sow = cumsum(temp_b_d),
-          temp_b_cd_sow = replace(temp_b_cd_sow, bbch == 00, 0),
-          bbch = replace(bbch, doy_emerg <= doy_sow & temp_b_cd_sow >= param$Tzero, 01)
+          temp_b_cd_sow = replace(temp_b_cd_sow, bbch == 00, 0)
+          ) %>% 
+        ungroup()
+
+      date_emerg <- unlist(BG_i$date[which(BG_i$temp_b_cd_sow >= 90)][1])
+      doy_emerg <- yday(date_emerg)
+      values$date_emerg <- date_emerg
+      values$doy_emerg <- doy_emerg
+      
+      BG_i <- BG_i %>% 
+        mutate(
+          bbch = replace(bbch, doy_emerg <= doy_sow & temp_b_cd_sow >= param$Tzero, 01),
+          bbch = replace(bbch, doy >= doy_emerg & doy < doy_harvest, 09)
         ) %>%
         group_by(emerged = bbch >= 09) %>%
         mutate(
@@ -475,6 +512,10 @@ server <- function(input, output, session) {
   
   output$overview_tab2 <- renderTable(
     overview_tab2()
+  )
+  
+  output$overview_tab3 <- renderTable(
+    overview_tab3()
   )
   
   output$results_tab <- renderTable(
