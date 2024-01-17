@@ -3,10 +3,10 @@
 ##
 ## BBRO BEETGRO MODEL - TRANSPOSING OPENMODEL VERSION TO R
 ##
-## v2023-01-18
+## v2024-01-17
 ##
-## This project uses R 4.1.2 
-## with snapshot date 2021-11-01
+## This project uses R 4.3.1 
+## with snapshot date 2023-08-01
 ##
 ## 
 ## Aim is to build a system that: 
@@ -32,8 +32,8 @@
 
 {
   # -------------------------------------------
-  snapshot_date = "2021-11-01"
-  options("repos" = paste0("https://mran.revolutionanalytics.com/snapshot/", snapshot_date))
+  snapshot_date = "2023-08-01"
+  options("repos" = paste0("https://packagemanager.posit.co/cran/", snapshot_date))
   # -------------------------------------------
   
   # -------------------------------------------
@@ -46,23 +46,23 @@
   # R packages
   # -------------------------------------------
   Rpackages_version = c(
-    "ggplot2_3.3.5",
-    "dplyr_1.0.7",
-    "tidyr_1.1.4",
-    "readxl_1.3.1",
-    "writexl_1.4.0",
-    "lubridate_1.8.0",
-    "RPostgreSQL_0.7-3",
-    "RPostgres_1.4.1"
+    "ggplot2_3.4.2",
+    "dplyr_1.1.2",
+    "tidyr_1.3.0",
+    "readxl_1.4.3",
+    "writexl_1.4.2",
+    "lubridate_1.9.2",
+    "RPostgreSQL_0.7-5",
+    "RPostgres_1.4.5"
   )
   
-  path_Rpackages = "C:/R packages_412"
+  path_Rpackages = "C:/R packages_431"
   # -------------------------------------------
   
   # version check and load packages
   # -------------------------------------------
   # R version check
-  if(sessionInfo()$R.version$version.string != "R version 4.1.2 (2021-11-01)") stop("R.version must be 4.1.2 (2021-11-01)")
+  if(sessionInfo()$R.version$version.string != "R version 4.3.1 (2023-06-16 ucrt)") stop("R.version must be 4.3.1 (2023-06-16 ucrt)")
   
   # install packages
   Rpack = sapply(strsplit(Rpackages_version, "_", fixed = T), FUN = function(x) x[1])

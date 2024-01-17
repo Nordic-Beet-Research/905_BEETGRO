@@ -79,3 +79,11 @@ DEVELOPER NOTES
 This version of the model was developed using the Tidyverse, where possible.
 
 Following the original OpenModel version, this version of the model loops through the trials
+
+########################################################
+VERSION NOTES
+905_BEETGRO_basic_230118: initial working version translated from OPENMODEL to R. This version was tested against OPENMODEL version with the same data and gave the same result.
+
+905_BEETGRO_basic_240117: version _230118 with a new front end: R4.3.1 and reading from the Posit repository.
+
+905_BEETGRO_basic_240117_negSMD: version _240117 modified to permit negative Soil Moisture Deficits to occur, for use i the Terranimo model.
